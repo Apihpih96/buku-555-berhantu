@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 80" width="64" height="80" role="img" aria-label="Friendly ghost">
+  <title>Hantu Mesra</title>
+  <!-- Ghost body -->
+  <ellipse cx="32" cy="30" rx="22" ry="26" fill="rgba(255,255,255,0.88)" stroke="#ccc" stroke-width="1"/>
+  <!-- Skirt with wavy bottom -->
+  <path d="
+    M10,48
+    Q10,66 16,62
+    Q20,58 24,62
+    Q28,66 32,62
+    Q36,58 40,62
+    Q44,66 48,62
+    Q54,58 54,48
+    Z
+  " fill="rgba(255,255,255,0.88)" stroke="#ccc" stroke-width="1"/>
+  <!-- Eyes -->
+  <ellipse cx="24" cy="28" rx="4" ry="5" fill="#333"/>
+  <ellipse cx="40" cy="28" rx="4" ry="5" fill="#333"/>
+  <!-- Eye gleam -->
+  <circle cx="25.5" cy="26.5" r="1.2" fill="white"/>
+  <circle cx="41.5" cy="26.5" r="1.2" fill="white"/>
+  <!-- Smile -->
+  <path d="M26,38 Q32,44 38,38" stroke="#333" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+  <!-- Rosy cheeks -->
+  <ellipse cx="19" cy="34" rx="4" ry="2.5" fill="rgba(255,150,150,0.4)"/>
+  <ellipse cx="45" cy="34" rx="4" ry="2.5" fill="rgba(255,150,150,0.4)"/>
+  <!-- Tiny floating stars -->
+  <circle cx="8"  cy="16" r="1.5" fill="rgba(255,220,50,0.7)"/>
+  <circle cx="56" cy="12" r="1"   fill="rgba(255,220,50,0.6)"/>
+  <circle cx="52" cy="22" r="1.2" fill="rgba(255,220,50,0.5)"/>
+</svg>
