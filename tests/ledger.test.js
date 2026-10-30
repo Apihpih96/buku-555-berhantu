@@ -22,6 +22,7 @@ import {
   buildReminder,
   formatLocalDate,
   customerTotal,
+  topDebtors,
 } from '../ledger.js';
 
 // ---------------------------------------------------------------------------
@@ -725,4 +726,241 @@ it('demoEntries: always has overdue, due-today, upcoming and paid entries', asyn
   assert.ok(d.some(e => !e.paid && e.dueDate === '2026-10-31'));
   assert.ok(d.some(e => !e.paid && e.dueDate > '2026-10-31'));
   assert.ok(overdueEntries(d, today).length >= 2);
+});
+
+// ---------------------------------------------------------------------------
+// Unit tests — topDebtors
+// ---------------------------------------------------------------------------
+
+describe('topDebtors', () => {
+  const TODAY = '2026-10-30'; // fixed reference date
+
+  it('returns empty array when ledger is empty', () => {
+    assert.deepEqual(topDebtors([], TODAY), []);
+  });
+
+  it('returns empty array when all entries are paid', () => {
+    const paid = { ...entry({ id: 'p', customer: 'Ali', amountRM: 20, dueDate: '2026-10-01' }), paid: true };
+    assert.deepEqual(topDebtors([paid], TODAY), []);
+  });
+
+  it('returns at most n=3 by default', () => {
+    const e = (id, cust, due) => entry({ id, customer: cust, amountRM: 10, dueDate: due });
+    const ledger = [
+      e('1', 'A', '2026-10-01'),
+      e('2', 'B', '2026-10-02'),
+      e('3', 'C', '2026-10-03'),
+      e('4', 'D', '2026-10-04'),
+    ];
+    const result = topDebtors(ledger, TODAY);
+    assert.equal(result.length, 3);
+  });
+
+  it('respects custom n', () => {
+    const e = (id, cust) => entry({ id, customer: cust, amountRM: 10, dueDate: '2026-10-01' });
+    const ledger = [e('1','A'), e('2','B'), e('3','C'), e('4','D'), e('5','E')];
+    assert.equal(topDebtors(ledger, TODAY, 2).length, 2);
+    assert.equal(topDebtors(ledger, TODAY, 5).length, 5);
+  });
+
+  it('sorts by daysOverdue descending', () => {
+    // A: overdue 29 days (Oct 1), B: overdue 15 days (Oct 15), C: overdue 5 days (Oct 25)
+    const a = entry({ id: 'a', customer: 'A', amountRM: 10, dueDate: '2026-10-01' });
+    const b = entry({ id: 'b', customer: 'B', amountRM: 10, dueDate: '2026-10-15' });
+    const c = entry({ id: 'c', customer: 'C', amountRM: 10, dueDate: '2026-10-25' });
+    const result = topDebtors([c, a, b], TODAY);
+    assert.equal(result[0].customer, 'A');
+    assert.equal(result[1].customer, 'B');
+    assert.equal(result[2].customer, 'C');
+  });
+
+  it('breaks ties by totalOwed descending', () => {
+    // Both overdue same number of days, A owes more
+    const a = entry({ id: 'a', customer: 'A', amountRM: 50, dueDate: '2026-10-20' });
+    const b = entry({ id: 'b', customer: 'B', amountRM: 20, dueDate: '2026-10-20' });
+    const result = topDebtors([b, a], TODAY);
+    assert.equal(result[0].customer, 'A');
+    assert.equal(result[1].customer, 'B');
+  });
+
+  it('aggregates multiple unpaid entries for same customer', () => {
+    const e1 = entry({ id: 'e1', customer: 'Ali', amountRM: 15, dueDate: '2026-10-01' });
+    const e2 = entry({ id: 'e2', customer: 'Ali', amountRM: 10, dueDate: '2026-10-10' });
+    const result = topDebtors([e1, e2], TODAY, 1);
+    assert.equal(result.length, 1);
+    assert.equal(result[0].customer, 'Ali');
+    assert.equal(result[0].totalOwed, 25);
+    // oldestDue is Oct 1 → 29 days overdue
+    assert.equal(result[0].daysOverdue, 29);
+  });
+
+  it('computes daysOverdue = 0 for future due dates', () => {
+    const e = entry({ id: 'f', customer: 'Siti', amountRM: 10, dueDate: '2026-12-01' });
+    const result = topDebtors([e], TODAY, 1);
+    assert.equal(result[0].daysOverdue, 0);
+  });
+
+  it('computes daysOverdue = 0 for entries with no due date', () => {
+    const e = entry({ id: 'n', customer: 'Siti', amountRM: 10, dueDate: null });
+    const result = topDebtors([e], TODAY, 1);
+    assert.equal(result[0].daysOverdue, 0);
+  });
+
+  it('does not include paid-only customers', () => {
+    const paid = { ...entry({ id: 'p', customer: 'Paid', amountRM: 100, dueDate: '2026-10-01' }), paid: true };
+    const unpaid = entry({ id: 'u', customer: 'Unpaid', amountRM: 5, dueDate: '2026-10-28' });
+    const result = topDebtors([paid, unpaid], TODAY);
+    assert.ok(result.every(d => d.customer !== 'Paid'), 'Paid customer should not appear');
+    assert.equal(result.length, 1);
+    assert.equal(result[0].customer, 'Unpaid');
+  });
+
+  it('accepts Date object as today', () => {
+    const e = entry({ id: 'd', customer: 'Ali', amountRM: 10, dueDate: '2026-10-01' });
+    const result = topDebtors([e], new Date(2026, 9, 30), 1);
+    assert.equal(result[0].daysOverdue, 29);
+  });
+
+  it('correct daysOverdue calculation: 29 days from Oct 1 to Oct 30', () => {
+    const e = entry({ id: 'calc', customer: 'Ali', amountRM: 10, dueDate: '2026-10-01' });
+    const result = topDebtors([e], TODAY, 1);
+    assert.equal(result[0].daysOverdue, 29);
+  });
+
+  it('totalOwed is non-negative', () => {
+    const e = entry({ id: 'nn', customer: 'Ali', amountRM: 0, dueDate: null });
+    const result = topDebtors([e], TODAY, 1);
+    assert.ok(result[0].totalOwed >= 0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Property-based tests — topDebtors
+// ---------------------------------------------------------------------------
+
+describe('topDebtors — PBT: never includes paid-only customers', () => {
+  it('PBT: result never contains a customer whose entries are all paid', () => {
+    const arbEntry = (customer) => fc.record({
+      id:        fc.uuid(),
+      customer:  fc.constant(customer),
+      item:      fc.constant('ayam'),
+      qty:       fc.constant(null),
+      amountRM:  fc.integer({ min: 1, max: 5000 }).map(n => n / 100),
+      dueDate:   fc.option(fc.constantFrom('2026-09-01', '2026-10-01', '2026-11-01')),
+      paid:      fc.boolean(),
+      paidAt:    fc.constant(null),
+      createdAt: fc.constant('2026-10-30T00:00:00.000Z'),
+      raw:       fc.constant(''),
+    });
+
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.constantFrom('Ali', 'Siti', 'Ros', 'Mat', 'Jeff').chain(
+            c => arbEntry(c)
+          ),
+          { minLength: 0, maxLength: 20 }
+        ),
+        (ledger) => {
+          const result = topDebtors(ledger, new Date(2026, 9, 30));
+          // For each result customer, they must have at least one unpaid entry
+          return result.every(d => {
+            const entries = ledger.filter(e => e.customer === d.customer);
+            return entries.some(e => !e.paid);
+          });
+        }
+      ),
+      { numRuns: 200 }
+    );
+  });
+});
+
+describe('topDebtors — PBT: at most n entries returned', () => {
+  it('PBT: result.length <= n for all inputs', () => {
+    const arbEntry = fc.record({
+      id:        fc.uuid(),
+      customer:  fc.constantFrom('Ali', 'Siti', 'Ros', 'Mat', 'Jeff', 'Zul', 'Hafiz'),
+      item:      fc.constant('item'),
+      qty:       fc.constant(null),
+      amountRM:  fc.integer({ min: 1, max: 5000 }).map(n => n / 100),
+      dueDate:   fc.option(fc.constant('2026-10-01')),
+      paid:      fc.boolean(),
+      paidAt:    fc.constant(null),
+      createdAt: fc.constant('2026-10-30T00:00:00.000Z'),
+      raw:       fc.constant(''),
+    });
+
+    fc.assert(
+      fc.property(
+        fc.array(arbEntry, { minLength: 0, maxLength: 30 }),
+        fc.integer({ min: 1, max: 10 }),
+        (ledger, n) => {
+          const result = topDebtors(ledger, new Date(2026, 9, 30), n);
+          return result.length <= n;
+        }
+      ),
+      { numRuns: 200 }
+    );
+  });
+});
+
+describe('topDebtors — PBT: result is sorted by daysOverdue descending', () => {
+  it('PBT: result[i].daysOverdue >= result[i+1].daysOverdue', () => {
+    const arbEntry = fc.record({
+      id:        fc.uuid(),
+      customer:  fc.constantFrom('Ali', 'Siti', 'Ros', 'Mat'),
+      item:      fc.constant('item'),
+      qty:       fc.constant(null),
+      amountRM:  fc.integer({ min: 1, max: 5000 }).map(n => n / 100),
+      dueDate:   fc.option(fc.constantFrom(
+        '2026-08-01', '2026-09-01', '2026-10-01', '2026-10-15', '2026-11-01', '2026-12-01'
+      )),
+      paid:      fc.boolean(),
+      paidAt:    fc.constant(null),
+      createdAt: fc.constant('2026-10-30T00:00:00.000Z'),
+      raw:       fc.constant(''),
+    });
+
+    fc.assert(
+      fc.property(
+        fc.array(arbEntry, { minLength: 0, maxLength: 20 }),
+        (ledger) => {
+          const result = topDebtors(ledger, new Date(2026, 9, 30));
+          for (let i = 0; i < result.length - 1; i++) {
+            if (result[i].daysOverdue < result[i + 1].daysOverdue) return false;
+          }
+          return true;
+        }
+      ),
+      { numRuns: 200 }
+    );
+  });
+});
+
+describe('topDebtors — PBT: totalOwed is always >= 0', () => {
+  it('PBT: every result has totalOwed >= 0', () => {
+    const arbEntry = fc.record({
+      id:        fc.uuid(),
+      customer:  fc.constantFrom('Ali', 'Siti'),
+      item:      fc.constant('item'),
+      qty:       fc.constant(null),
+      amountRM:  fc.float({ min: 0, max: 1000, noNaN: true }).map(n => Math.round(n * 100) / 100),
+      dueDate:   fc.constant(null),
+      paid:      fc.constant(false),
+      paidAt:    fc.constant(null),
+      createdAt: fc.constant('2026-10-30T00:00:00.000Z'),
+      raw:       fc.constant(''),
+    });
+
+    fc.assert(
+      fc.property(
+        fc.array(arbEntry, { minLength: 1, maxLength: 10 }),
+        (ledger) => {
+          const result = topDebtors(ledger, new Date(2026, 9, 30));
+          return result.every(d => d.totalOwed >= 0);
+        }
+      ),
+      { numRuns: 150 }
+    );
+  });
 });
