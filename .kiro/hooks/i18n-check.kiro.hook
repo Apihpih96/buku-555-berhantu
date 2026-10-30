@@ -1,0 +1,14 @@
+{
+  "enabled": true,
+  "name": "i18n completeness check",
+  "description": "Whenever i18n.js is saved, verify that every key in the STRINGS object has both a 'ms' and an 'en' value, and add any missing translations.",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": ["i18n.js"]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "i18n.js was just saved. Please inspect the STRINGS object in i18n.js and check that every key has both a 'ms' (Bahasa Melayu) value and an 'en' (English) value. If any key is missing one of the two languages, add an appropriate translation — keep Bahasa Melayu as the primary voice and English as a close equivalent. Report any keys you added or changed."
+  }
+}
