@@ -169,6 +169,116 @@ Terima kasih 🙏
 
 ---
 
+## Hantu Reminder — `buildReminder(entries, customer, today, lang)`
+
+### Purpose
+A pure function in `ledger.js` that builds a complete, tone-aware WhatsApp `wa.me` URL covering **all** of a customer's unpaid entries.
+
+### Signature
+```ts
+buildReminder(
+  entries:  LedgerEntry[],   // full ledger (function filters to unpaid for customer)
+  customer: string,
+  today:    Date,
+  lang:     'ms' | 'en'
+): string                    // full https://wa.me/60XXXXXXXXX?text=... URL
+```
+The phone number must be provided separately by the caller (looked up from the phones map in `app.js`) and passed to `normaliseMsisdn` before building the URL. `buildReminder` itself builds only the **message text** and wraps it into the URL using the normalised number.
+
+Revised signature (phones managed by app.js):
+```ts
+buildReminder(
+  entries:  LedgerEntry[],
+  customer: string,
+  msisdn:   string,          // raw phone — normalised internally
+  today:    Date,
+  lang:     'ms' | 'en'
+): string
+```
+
+### Date formatting — local calendar, never toISOString
+```js
+// Correct (local time):
+const d = new Date('2026-11-06T00:00:00');  // interpreted as local
+const dayName = d.toLocaleDateString('ms-MY', { weekday: 'long' }); // "Jumaat"
+const dateStr = d.toLocaleDateString('ms-MY', { day: 'numeric', month: 'short' }); // "6 Nov"
+// Combined: "Jumaat, 6 Nov"
+
+// For Node test environment (no locale data), use a manual table instead:
+const MS_DAYS = ['Ahad','Isnin','Selasa','Rabu','Khamis','Jumaat','Sabtu'];
+const MS_MONTHS = ['Jan','Feb','Mac','Apr','Mei','Jun','Jul','Ogo','Sep','Okt','Nov','Dis'];
+```
+
+### Tone rules
+| Condition | Tone |
+|-----------|------|
+| All unpaid entries have `dueDate > today` OR `dueDate === null` | Gentle heads-up; no ghost |
+| Any entry has `dueDate === today` (local) | Mention "hari ini" / "today" |
+| Any entry has `dueDate < today` (local) | Ghost joke intro + ignore-if-paid sign-off |
+
+### Message structure (ms)
+```
+Assalamualaikum {customer}, 👋
+
+[if any overdue:]
+Hantu Buku 555 datang menjenguk 👻
+
+Hutang belum dijelaskan:
+• {item} [×{qty}] — RM{amount}  [{due line}]
+• …
+
+Jumlah: RM{total}
+
+[if no overdue:] Harap dapat dijelaskan tidak lama lagi. 🙏
+[if overdue:]    Kalau dah bayar, abaikan ya. 🙏
+
+Terima kasih 🙏
+```
+
+Due line variants (ms):
+- No due date: *(omit)*
+- Due today: `(hari ini)`
+- Overdue: `(tertunggak sejak {date})`
+- Future: `(bayar sebelum {date})`
+
+### Message structure (en)
+```
+Hello {customer}, 👋
+
+[if any overdue:]
+The Buku 555 Ghost has come to visit 👻
+
+Outstanding balance:
+• {item} [×{qty}] — RM{amount}  [{due line}]
+• …
+
+Total: RM{total}
+
+[if no overdue:] Hope to settle this soon. 🙏
+[if overdue:]    If you've already paid, please ignore this. 🙏
+
+Thank you 🙏
+```
+
+### Storage — phones map
+```json
+{
+  "version": 1,
+  "entries": [ ...LedgerEntry ],
+  "phones":  { "Kak Ros": "60123456789", "Encik Ali": "60197654321" },
+  "lang": "ms"
+}
+```
+`phones` is optional (absent in old backups = empty map). `app.js` manages loading, saving, and updating it.
+
+### Correctness Properties for `buildReminder` (PBT)
+10. **Message total = sum of unpaid:** The RM total in the message equals `customerTotal(entries, customer)`.
+11. **Paid entries excluded:** No paid entry's item appears in the message.
+12. **URL prefix:** The returned URL starts with `https://wa.me/60`.
+13. **Empty = empty URL:** If the customer has no unpaid entries, `buildReminder` returns `''` (or throws — callers must guard).
+
+---
+
 ## Accessibility Notes
 - All buttons: `aria-label` in active language
 - Ghost icon: `aria-hidden="true"` (decorative)

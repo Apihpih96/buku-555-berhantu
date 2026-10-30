@@ -57,11 +57,31 @@ A phone-first progressive web app for Malaysian market traders to track customer
 
 ### FR-4: WhatsApp Reminder
 
-**FR-4.1** WHEN the trader taps "Hantar Peringatan" (Send Reminder) on an overdue customer, the system SHALL construct a polite Malay message and open `https://wa.me/<msisdn>?text=<encoded>` in a new tab.
+**FR-4.1** WHEN the trader taps "Hantar Peringatan" on any unpaid entry (overdue or not), the system SHALL construct a single reminder message covering ALL of that customer's unpaid entries and open `https://wa.me/<msisdn>?text=<encoded>` in a new tab.
 
 **FR-4.2** WHEN constructing the WhatsApp link, the system SHALL normalise Malaysian phone numbers to the format `60XXXXXXXXX` (strip leading `0`, prepend `60`).
 
 **FR-4.3** The system SHALL NOT send any message automatically; the trader must press Send in WhatsApp.
+
+**FR-4.4** WHEN the trader taps "Hantar Peringatan" and no phone number is saved for that customer, the system SHALL display an in-app dialog (not `window.prompt`) with a telephone number input (`inputmode="tel"`), a "Simpan" (Save) button, and a "Batal" (Cancel) button; the dialog SHALL have a minimum tap-target size of 48 × 48 px.
+
+**FR-4.5** WHEN a phone number is already saved for a customer, the system SHALL reuse it without showing the dialog, and SHALL display a small "Tukar nombor" (Change number) link next to the reminder button so the trader can update it.
+
+**FR-4.6** WHEN the trader saves a phone number, the system SHALL persist a map of `{ customerName → normalised 60XXXXXXXXX }` in localStorage alongside the ledger entries.
+
+**FR-4.7** WHEN the trader exports a backup, the system SHALL include the phone-number map in the exported JSON so it survives export/import round-trips.
+
+**FR-4.8** WHEN the reminder message is built, the system SHALL list each of the customer's unpaid items on its own line with the amount (e.g. `kembung × 2 — RM18.00`) and due date formatted as a local calendar string (e.g. `Jumaat, 6 Nov`), followed by the total amount owed.
+
+**FR-4.9** WHEN all of a customer's unpaid entries are not yet overdue, the reminder tone SHALL be a gentle heads-up with no ghost jokes.
+
+**FR-4.10** WHEN the due date is today, the reminder SHALL mention `hari ini` (or `today`).
+
+**FR-4.11** WHEN at least one of the customer's unpaid entries is overdue, the reminder SHALL include a light ghost reference (e.g. `Hantu Buku 555 datang menjenguk 👻`) and end with a `kalau dah bayar, abaikan ya` (or `if already paid, please ignore`) line before `Terima kasih 🙏`.
+
+**FR-4.12** WHEN the UI language is English, the reminder message SHALL be written in English following the same tone rules.
+
+**FR-4.13** WHEN building the reminder, the system SHALL use local calendar dates (never `toISOString()`) for formatting due dates in the message body.
 
 ---
 
@@ -110,3 +130,9 @@ A phone-first progressive web app for Malaysian market traders to track customer
 | AC-5 | WhatsApp link opens with correct normalised number and pre-filled message |
 | AC-6 | App loads and works with JavaScript disabled networking (offline) |
 | AC-7 | All property-based tests pass (see design.md §Correctness Properties) |
+| AC-8 | `buildReminder()` message total equals sum of the customer's unpaid amounts |
+| AC-9 | Paid entries never appear in the reminder message |
+| AC-10 | `buildReminder()` URL starts with `https://wa.me/60` |
+| AC-11 | Phone-number map is preserved after export → import round-trip |
+| AC-12 | "Hantar Peringatan" button is shown on every unpaid entry |
+| AC-13 | In-app phone dialog appears when no number is saved; saved number is reused without dialog |
