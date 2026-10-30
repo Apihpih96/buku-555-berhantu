@@ -77,3 +77,4 @@ Numbered checklist of implementation tasks. Each task references the requirement
 
 - [x] T-27 Run `npm test` until all tests pass; mark T-24..T-27 as complete
 - [x] T-28 Bug: emoji in reminders arrived as "�" because the wa.me redirect re-encodes 4-byte characters. Switch to https://api.whatsapp.com/send?phone=…&text=… and update URL tests/properties
+- [x] T-29 Bug: phone dialog opened in the top-left corner because the global margin reset overrode the native dialog's auto margin; restore `margin: auto` so it centres
