@@ -119,6 +119,50 @@ A phone-first progressive web app for Malaysian market traders to track customer
 
 ---
 
+### FR-7: Progressive Web App (PWA)
+
+**FR-7.1** WHEN the browser supports service workers, the system SHALL register `sw.js` using a relative path so the app works under a GitHub Pages sub-path (e.g. `/buku-555-berhantu/`).
+
+**FR-7.2** WHEN installed, the service worker SHALL cache the full app shell (index.html, styles.css, app.js, parser.js, ledger.js, i18n.js, manifest.json, and both SVG icons) using a versioned cache-first strategy; the cache name SHALL include a version string that is bumped on each deployment.
+
+**FR-7.3** WHEN the service worker activates, it SHALL delete all caches that do not match the current version string.
+
+**FR-7.4** WHEN a requested resource is not in the cache (network fallback), the service worker SHALL attempt a network fetch and return the response; if the network also fails, it SHALL return a minimal offline fallback.
+
+**FR-7.5** WHEN the browser fires the `beforeinstallprompt` event, the app SHALL display a bilingual install button labelled 'Pasang app' (ms) / 'Install app' (en); the button SHALL be hidden at all other times.
+
+**FR-7.6** WHEN the trader taps the install button, the system SHALL invoke the deferred prompt and hide the button after the user responds.
+
+**FR-7.7** The `manifest.json` SHALL declare: `name` = 'Buku 555 Berhantu', `short_name` = 'Buku 555', `start_url` = './', `scope` = './', `display` = 'standalone', `theme_color` = '#8B0000', `background_color` = '#fdf6e3', and two icon entries (192 × 192 and 512 × 512, purpose 'any maskable').
+
+**FR-7.8** PWA icons SHALL be SVG files stored in `assets/` and referenced from `manifest.json`; they SHALL be based on the existing `ghost.svg` and include the ghost motif inside a red square background matching the theme colour.
+
+---
+
+### FR-8: Kiro Agent Hooks
+
+**FR-8.1** WHEN any `.js` file or `tests/*.js` file is saved in the editor, the Kiro agent hook `run-tests-on-save.kiro.hook` SHALL instruct the agent to run `npm test` and fix any failures without weakening existing tests.
+
+**FR-8.2** WHEN `i18n.js` is saved, the Kiro agent hook `i18n-check.kiro.hook` SHALL instruct the agent to verify that every key in the `STRINGS` object has both a `ms` and an `en` value, and to add any missing translations.
+
+**FR-8.3** Both hook files SHALL be stored under `.kiro/hooks/` in the JSON format required by the Kiro IDE hook schema (fields: `enabled`, `name`, `description`, `version`, `when`, `then`).
+
+---
+
+### FR-9: Top Debtors Card ('Siapa paling lama hutang')
+
+**FR-9.1** WHEN there is at least one unpaid ledger entry, the system SHALL display a 'Siapa paling lama hutang' / 'Who has owed longest' card above the main ledger list showing the top N customers (default N = 3) with unpaid balances.
+
+**FR-9.2** WHEN the top-debtors card is displayed, each row SHALL show the customer name, total amount owed, and how many days they are overdue (e.g. 'tertunggak 5 hari' / '5 days overdue'); customers whose oldest unpaid due date is not yet past SHALL show 0 days overdue.
+
+**FR-9.3** WHEN there are no unpaid entries, the top-debtors card SHALL be hidden entirely.
+
+**FR-9.4** The ranking function `topDebtors(ledger, today, n)` SHALL be a pure function in `ledger.js` that returns at most `n` customer objects sorted descending by days-overdue (oldest overdue first), breaking ties by total amount owed (largest first), and SHALL never include customers whose entries are all paid.
+
+**FR-9.5** WHEN ranking, the system SHALL use local calendar dates (not UTC) to compute days overdue from the customer's oldest unpaid due date to today.
+
+---
+
 ## Acceptance Criteria Summary
 
 | ID | Criterion |
@@ -136,3 +180,8 @@ A phone-first progressive web app for Malaysian market traders to track customer
 | AC-11 | Phone-number map is preserved after export → import round-trip |
 | AC-12 | "Hantar Peringatan" button is shown on every unpaid entry |
 | AC-13 | In-app phone dialog appears when no number is saved; saved number is reused without dialog |
+| AC-14 | App loads without network after first visit (service worker caches app shell) |
+| AC-15 | 'Pasang app' / 'Install app' button is hidden until `beforeinstallprompt` fires |
+| AC-16 | `topDebtors(ledger, today, n)` never returns customers whose entries are all paid |
+| AC-17 | `topDebtors` result has at most `n` entries and is sorted descending by days overdue |
+| AC-18 | Both Kiro hook files exist under `.kiro/hooks/` and match the hook JSON schema |

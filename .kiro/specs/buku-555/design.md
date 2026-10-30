@@ -284,3 +284,143 @@ Thank you 🙏
 - Ghost icon: `aria-hidden="true"` (decorative)
 - Input field: `role="textbox"`, `aria-label` describes purpose
 - Tap targets: CSS `min-height: 48px; min-width: 48px`
+
+---
+
+## PWA Architecture
+
+### Service Worker (`sw.js`)
+```
+sw.js
+  ├── CACHE_VERSION = 'buku555-v2'
+  ├── APP_SHELL = [ './', './index.html', './styles.css', './app.js',
+  │                 './parser.js', './ledger.js', './i18n.js',
+  │                 './manifest.json', './assets/icon-192.svg',
+  │                 './assets/icon-512.svg' ]
+  ├── install event  → cache.addAll(APP_SHELL)
+  ├── activate event → delete old caches (keys !== CACHE_VERSION)
+  └── fetch event    → cache-first, then network, return cached or network response
+```
+
+**Registration** (in `app.js`):
+```js
+if ('serviceWorker' in navigator) {
+  // Use relative path — works under /buku-555-berhantu/ on GitHub Pages
+  navigator.serviceWorker.register('./sw.js');
+}
+```
+
+**Install button** (`beforeinstallprompt`):
+```js
+let deferredPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  // Show #btn-install button
+});
+// On click: deferredPrompt.prompt(); hide button after response.
+```
+
+### `manifest.json`
+```json
+{
+  "name": "Buku 555 Berhantu",
+  "short_name": "Buku 555",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "theme_color": "#8B0000",
+  "background_color": "#fdf6e3",
+  "icons": [
+    { "src": "assets/icon-192.svg", "sizes": "192x192", "type": "image/svg+xml", "purpose": "any maskable" },
+    { "src": "assets/icon-512.svg", "sizes": "512x512", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
+```
+
+### SVG Icons
+Both icons reuse the existing ghost motif on a dark red (#8B0000) rounded-square background:
+- `assets/icon-192.svg` — 192×192 viewBox, ghost centred
+- `assets/icon-512.svg` — 512×512 viewBox, ghost centred
+
+---
+
+## Kiro Hooks Schema
+
+Hook files live in `.kiro/hooks/` and follow this JSON shape:
+```json
+{
+  "enabled": true,
+  "name": "Human-readable hook name",
+  "description": "What this hook does",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": ["glob/pattern"]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Instruction to the Kiro agent…"
+  }
+}
+```
+
+### `run-tests-on-save.kiro.hook`
+- **when:** `fileEdited` patterns `["*.js", "tests/*.js"]`
+- **then:** run `npm test`; fix failures without weakening tests
+
+### `i18n-check.kiro.hook`
+- **when:** `fileEdited` patterns `["i18n.js"]`
+- **then:** verify every key in `STRINGS` has both `ms` and `en`; add missing translations
+
+---
+
+## Top Debtors — `topDebtors(ledger, today, n)`
+
+### Purpose
+A pure function that returns the top-N customers with the most overdue (or outstanding) debt, to surface the most urgent collections at the top of the UI.
+
+### Signature
+```ts
+topDebtors(
+  ledger: LedgerEntry[],
+  today:  Date | string,   // local calendar reference date
+  n?:     number           // default 3
+): DebtorSummary[]
+```
+
+### Return type
+```ts
+type DebtorSummary = {
+  customer:    string,
+  totalOwed:   number,   // sum of unpaid amountRM, 2 dp
+  daysOverdue: number,   // days since oldest unpaid due date; 0 if not yet overdue
+}
+```
+
+### Algorithm
+1. Filter to unpaid entries only.
+2. Group by customer name.
+3. For each customer compute:
+   - `totalOwed` — sum of their unpaid `amountRM` (rounded to 2 dp)
+   - `oldestDue` — earliest (min) `dueDate` among their unpaid entries that have a `dueDate`; `null` if none have a due date
+   - `daysOverdue` — if `oldestDue !== null && oldestDue < todayISO` then `differenceInCalendarDays(today, oldestDue)`, else `0`
+4. Sort descending by `daysOverdue` (most overdue first), break ties by `totalOwed` descending.
+5. Return first `n` results.
+
+### Days calculation (local, integer)
+```js
+function calendarDaysDiff(fromISO, toDate) {
+  // Parse fromISO as local midnight
+  const [y, m, d] = fromISO.split('-').map(Number);
+  const from = new Date(y, m - 1, d);
+  const to   = new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate());
+  return Math.floor((to - from) / 86400000);
+}
+```
+
+### Correctness Properties (PBT)
+14. **Never includes paid-only customers:** no customer in `topDebtors` result has all entries paid.
+15. **At most n entries:** `topDebtors(ledger, today, n).length <= n`.
+16. **Sorted:** result[i].daysOverdue >= result[i+1].daysOverdue for all i.
+17. **totalOwed non-negative:** every result has `totalOwed >= 0`.
