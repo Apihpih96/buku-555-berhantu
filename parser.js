@@ -131,7 +131,9 @@ function resolveDay(ref, today) {
  * @returns {string}
  */
 function toISO(d) {
-  return d.toISOString().slice(0, 10);
+  // Use local calendar date (toISOString shifts to UTC and is a day early in Malaysia, UTC+8)
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -278,6 +280,8 @@ export function parse(input, today = new Date()) {
     .replace(/[,،]/g, ' ')
     .replace(/(\D)\.|\.(\D)/g, '$1 $2')  // periods not between digits → space
     .replace(/^\.|\.$/, ' ')             // leading/trailing periods
+    // Split digit+unit like "2kilo" / "3kg" into "2 kilo"
+    .replace(/(\d)(kilo|kg|tin|biji|botol|liter|litre|paket|pack|gelas)\b/g, '$1 $2')
     .replace(/\s+/g, ' ')
     .trim();
 

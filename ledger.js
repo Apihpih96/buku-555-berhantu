@@ -132,7 +132,7 @@ export function totalOutstanding(ledger) {
  * @returns {LedgerEntry[]}
  */
 export function overdueEntries(ledger, today = new Date()) {
-  const todayISO = typeof today === 'string' ? today : today.toISOString().slice(0, 10);
+  const todayISO = typeof today === 'string' ? today : localISO(today);
   return ledger.filter(e => !e.paid && e.dueDate !== null && e.dueDate < todayISO);
 }
 
@@ -267,4 +267,14 @@ function uid() {
     return crypto.randomUUID();
   }
   return Date.now().toString(36) + Math.random().toString(36).slice(2);
+}
+
+/**
+ * Local calendar date as YYYY-MM-DD (not UTC).
+ * @param {Date} d
+ * @returns {string}
+ */
+function localISO(d) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
