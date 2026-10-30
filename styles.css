@@ -1,0 +1,502 @@
+/* ============================================================
+   Buku 555 Berhantu — styles.css
+   Haunted notebook theme: aged paper, Buku 555 red/blue palette,
+   ghost animations. Mobile-first, WCAG AA contrast, ≥48px tap targets.
+   ============================================================ */
+
+/* ---- Reset & base ---- */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  /* Buku 555 palette */
+  --red:          #B71C1C;   /* deep notebook red */
+  --red-dark:     #7F0000;
+  --red-light:    #EF9A9A;
+  --blue:         #0D47A1;   /* notebook blue stripe */
+  --blue-light:   #BBDEFB;
+
+  /* Paper */
+  --paper:        #FAF3E0;   /* aged parchment */
+  --paper-dark:   #EDE0C4;   /* darker lined area */
+  --paper-line:   #C9B99A;   /* faint ruled lines */
+  --ink:          #1A1A1A;   /* dark ink */
+  --ink-faded:    #5C4A2A;   /* faded ink for secondary text */
+
+  /* Ghostly accent */
+  --ghost-glow:   rgba(255, 255, 255, 0.85);
+  --overdue-bg:   #FFF3E0;
+  --overdue-border: #E65100;
+
+  /* Feedback */
+  --success:      #1B5E20;
+  --error:        #B71C1C;
+
+  /* Spacing */
+  --radius:       6px;
+  --shadow:       0 2px 8px rgba(0,0,0,0.18);
+
+  /* Typography */
+  --font-body:    'Georgia', 'Times New Roman', serif;
+  --font-ui:      system-ui, -apple-system, sans-serif;
+}
+
+html {
+  font-size: 18px;           /* NFR-2 */
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--paper-dark);
+  color: var(--ink);
+  min-height: 100dvh;
+  background-image:
+    repeating-linear-gradient(
+      transparent,
+      transparent 27px,
+      var(--paper-line) 27px,
+      var(--paper-line) 28px
+    );
+  background-attachment: local;
+}
+
+/* ============================================================
+   Utility
+   ============================================================ */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ============================================================
+   HEADER
+   ============================================================ */
+.app-header {
+  background: linear-gradient(135deg, var(--red-dark) 0%, var(--red) 100%);
+  color: #fff;
+  padding: 0.75rem 1rem;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: var(--shadow);
+  border-bottom: 4px solid var(--blue);
+}
+
+.header-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+h1 {
+  font-size: 1.4rem;
+  font-weight: bold;
+  letter-spacing: 0.02em;
+  text-shadow: 1px 1px 3px rgba(0,0,0,0.5);
+}
+
+.app-subtitle {
+  font-size: 0.85rem;
+  opacity: 0.85;
+  font-style: italic;
+}
+
+/* ============================================================
+   BUTTONS — all ≥48px touch target (NFR-1)
+   ============================================================ */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  min-width: 48px;
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 1rem;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.btn:active {
+  transform: scale(0.96);
+}
+
+.btn-lang {
+  background: rgba(255,255,255,0.2);
+  color: #fff;
+  font-weight: bold;
+  border: 1px solid rgba(255,255,255,0.4);
+  min-width: 52px;
+}
+.btn-lang:hover { background: rgba(255,255,255,0.35); }
+
+.btn-mic {
+  background: var(--blue);
+  color: #fff;
+  font-size: 0.95rem;
+}
+.btn-mic.recording {
+  background: var(--red);
+  animation: pulse 1s infinite;
+}
+
+.btn-add {
+  background: var(--blue);
+  color: #fff;
+  font-weight: bold;
+  font-size: 1rem;
+}
+.btn-add:hover { background: var(--blue-light); color: var(--ink); }
+
+.btn-pay {
+  background: var(--success);
+  color: #fff;
+  font-size: 0.9rem;
+}
+
+.btn-wa {
+  background: #25D366;
+  color: #fff;
+  font-size: 0.9rem;
+}
+
+.btn-del {
+  background: transparent;
+  color: var(--red);
+  border: 1px solid var(--red);
+  font-size: 0.9rem;
+}
+.btn-del:hover { background: var(--red); color: #fff; }
+
+.btn-toolbar {
+  background: var(--paper-dark);
+  color: var(--ink-faded);
+  border: 1px solid var(--paper-line);
+  font-size: 0.9rem;
+}
+.btn-toolbar:hover { background: var(--paper-line); }
+
+/* ============================================================
+   MAIN LAYOUT
+   ============================================================ */
+.app-main {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* ============================================================
+   ENTRY FORM
+   ============================================================ */
+.entry-section {
+  background: var(--paper);
+  border-radius: var(--radius);
+  padding: 0.75rem;
+  box-shadow: var(--shadow);
+  border-left: 5px solid var(--blue);
+}
+
+.input-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+
+.entry-input {
+  flex: 1 1 200px;
+  min-height: 48px;
+  padding: 0.5rem 0.75rem;
+  font-size: 1rem;
+  font-family: var(--font-body);
+  border: 1px solid var(--paper-line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  outline: none;
+  transition: border-color 0.2s;
+}
+.entry-input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px var(--blue-light);
+}
+
+/* ============================================================
+   SUMMARY BAR
+   ============================================================ */
+.summary-bar {
+  background: linear-gradient(90deg, var(--red-dark), var(--red));
+  color: #fff;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.total-label {
+  font-size: 0.9rem;
+  font-style: italic;
+  opacity: 0.9;
+}
+
+.total-amount {
+  font-size: 1.5rem;
+  font-weight: bold;
+  letter-spacing: 0.03em;
+  text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+}
+
+/* ============================================================
+   LEDGER
+   ============================================================ */
+.ledger-section {
+  background: var(--paper);
+  border-radius: var(--radius);
+  padding: 0.75rem;
+  box-shadow: var(--shadow);
+}
+
+.section-title {
+  font-size: 1.1rem;
+  color: var(--red-dark);
+  margin-bottom: 0.75rem;
+  border-bottom: 2px solid var(--red-light);
+  padding-bottom: 0.25rem;
+}
+
+.ledger-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.empty-msg {
+  text-align: center;
+  color: var(--ink-faded);
+  font-style: italic;
+  padding: 2rem 0;
+}
+
+/* ---- Customer group ---- */
+.customer-section {
+  border: 1px solid var(--paper-line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.customer-name {
+  background: var(--blue);
+  color: #fff;
+  font-size: 1rem;
+  padding: 0.5rem 0.75rem;
+  font-family: var(--font-ui);
+}
+
+/* ---- Entry card ---- */
+.entry-card {
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--paper-line);
+  background: var(--paper);
+  transition: background 0.2s;
+}
+
+.entry-card:last-child { border-bottom: none; }
+
+.entry-card.overdue {
+  background: var(--overdue-bg);
+  border-left: 4px solid var(--overdue-border);
+}
+
+.entry-card.paid {
+  opacity: 0.55;
+  background: var(--paper-dark);
+}
+
+.entry-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.entry-item {
+  font-weight: bold;
+  color: var(--ink);
+  font-size: 1.05rem;
+}
+
+.entry-qty {
+  color: var(--ink-faded);
+  font-size: 0.9rem;
+}
+
+.entry-amount {
+  background: var(--red);
+  color: #fff;
+  padding: 0.15rem 0.5rem;
+  border-radius: 3px;
+  font-weight: bold;
+  font-size: 0.95rem;
+  margin-left: auto;
+}
+
+.entry-due {
+  font-size: 0.85rem;
+  color: var(--ink-faded);
+  width: 100%;
+  font-style: italic;
+}
+
+.overdue-label {
+  font-size: 0.8rem;
+  color: var(--overdue-border);
+  font-weight: bold;
+}
+
+.ghost-icon {
+  font-size: 1.2rem;
+  animation: float 2.5s ease-in-out infinite;
+}
+
+.entry-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-top: 0.25rem;
+}
+
+/* ---- Paid section ---- */
+.paid-section {
+  margin-top: 0.75rem;
+  border: 1px solid var(--paper-line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.paid-section summary {
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  background: var(--paper-dark);
+  color: var(--ink-faded);
+  font-style: italic;
+  font-size: 0.9rem;
+  list-style: none;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+}
+
+.paid-section summary::-webkit-details-marker { display: none; }
+.paid-section[open] summary { background: var(--paper-line); }
+
+/* ============================================================
+   FOOTER
+   ============================================================ */
+.app-footer {
+  background: var(--red-dark);
+  color: rgba(255,255,255,0.8);
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: center;
+  border-top: 4px solid var(--blue);
+}
+
+.footer-credit {
+  width: 100%;
+  text-align: center;
+  font-size: 0.8rem;
+  opacity: 0.7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+}
+
+.footer-ghost {
+  filter: brightness(2);
+}
+
+/* ============================================================
+   TOAST
+   ============================================================ */
+.toast {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%) translateY(100px);
+  background: var(--ink);
+  color: #fff;
+  padding: 0.75rem 1.5rem;
+  border-radius: 2rem;
+  font-size: 0.95rem;
+  box-shadow: var(--shadow);
+  z-index: 999;
+  transition: transform 0.3s ease;
+  pointer-events: none;
+  max-width: 90vw;
+  text-align: center;
+}
+
+.toast.show {
+  transform: translateX(-50%) translateY(0);
+}
+
+.toast.toast-success { background: var(--success); }
+.toast.toast-error   { background: var(--error); }
+
+/* ============================================================
+   ANIMATIONS
+   ============================================================ */
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-5px); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.6; }
+}
+
+/* ============================================================
+   RESPONSIVE — narrow screens keep big buttons
+   ============================================================ */
+@media (max-width: 400px) {
+  html { font-size: 17px; }
+  .input-row { flex-direction: column; }
+  .btn-mic, .btn-add { width: 100%; }
+  .entry-amount { margin-left: 0; }
+}
+
+/* ============================================================
+   PRINT — hide chrome, show clean ledger
+   ============================================================ */
+@media print {
+  .app-header, .entry-section, .app-footer, .entry-actions { display: none !important; }
+  .app-main { max-width: 100%; padding: 0; }
+  body { background: #fff; font-size: 12pt; }
+}

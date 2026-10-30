@@ -1,0 +1,14 @@
+{
+  "name": "buku555-berhantu",
+  "version": "1.0.0",
+  "description": "Buku 555 Berhantu — haunted debt tracker for Malaysian market traders",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.js"
+  },
+  "author": "Mohammad Afif bin Mohd Saberi",
+  "license": "MIT",
+  "devDependencies": {
+    "fast-check": "3.22.0"
+  }
+}

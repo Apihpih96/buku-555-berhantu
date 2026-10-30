@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Buku 555 Berhantu — buku hutang digital untuk peniaga pasar" />
+  <meta name="theme-color" content="#8B0000" />
+  <title>Buku 555 Berhantu 👻</title>
+  <link rel="stylesheet" href="styles.css" />
+
+  <!-- PWA / offline -->
+  <link rel="manifest" href="manifest.json" />
+</head>
+<body>
+  <!-- ============================================================
+       HEADER
+  ============================================================ -->
+  <header class="app-header" role="banner">
+    <div class="header-inner">
+      <div class="header-title-group">
+        <h1 id="app-title">Buku 555 Berhantu 👻</h1>
+        <p id="app-subtitle" class="app-subtitle">Buku Hutang Digital</p>
+      </div>
+      <button
+        id="btn-lang"
+        class="btn btn-lang"
+        aria-label="Tukar ke Bahasa Inggeris"
+        type="button"
+      >EN</button>
+    </div>
+  </header>
+
+  <!-- ============================================================
+       MAIN
+  ============================================================ -->
+  <main class="app-main" role="main">
+
+    <!-- ---- Entry form ---- -->
+    <section class="entry-section" aria-labelledby="entry-heading">
+      <h2 id="entry-heading" class="sr-only">Masukkan Hutang Baru</h2>
+
+      <div class="input-row">
+        <button
+          id="btn-mic"
+          class="btn btn-mic"
+          type="button"
+          aria-label="Butang mikrofon sebutan suara"
+        >🎙️ Sebut</button>
+
+        <input
+          id="entry-input"
+          type="text"
+          class="entry-input"
+          placeholder="Contoh: Kak Ros ambil 2 kilo kembung RM18, bayar Jumaat"
+          aria-label="Masukkan hutang baru"
+          autocomplete="off"
+          autocorrect="off"
+          spellcheck="false"
+        />
+
+        <button
+          id="btn-add"
+          class="btn btn-add"
+          type="button"
+          aria-label="Rekod"
+        >✚ Tambah</button>
+      </div>
+    </section>
+
+    <!-- ---- Summary bar ---- -->
+    <section class="summary-bar" aria-label="Jumlah hutang tertunggak">
+      <span id="total-label" class="total-label">Jumlah Tertunggak</span>
+      <span id="total-amount" class="total-amount">RM0.00</span>
+    </section>
+
+    <!-- ---- Ledger list ---- -->
+    <section class="ledger-section" aria-labelledby="section-title">
+      <h2 id="section-title" class="section-title">Senarai Hutang</h2>
+      <div id="ledger-list" class="ledger-list" role="list">
+        <!-- Entries rendered by app.js -->
+        <p class="empty-msg">Tiada hutang. Alhamdulillah! 🎉</p>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ============================================================
+       FOOTER / TOOLBAR
+  ============================================================ -->
+  <footer class="app-footer" role="contentinfo">
+    <button
+      id="btn-export"
+      class="btn btn-toolbar"
+      type="button"
+      aria-label="Eksport data sebagai JSON"
+    >📤 Eksport</button>
+
+    <button
+      id="btn-import"
+      class="btn btn-toolbar"
+      type="button"
+      aria-label="Import data JSON"
+    >📥 Import</button>
+
+    <p class="footer-credit">
+      <img src="assets/ghost.svg" class="footer-ghost" alt="" aria-hidden="true" width="24" height="24" />
+      Buku 555 Berhantu &copy; 2026
+    </p>
+  </footer>
+
+  <!-- Toast notification (injected by app.js) -->
+  <div id="toast" class="toast" role="alert" aria-live="polite"></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
