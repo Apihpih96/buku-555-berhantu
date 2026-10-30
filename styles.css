@@ -496,6 +496,8 @@ h1 {
    PHONE DIALOG
    ============================================================ */
 .phone-dialog {
+  margin: auto; /* undo global reset so the native dialog centres */
+  inset: 0;
   border: none;
   border-radius: var(--radius);
   box-shadow: 0 8px 32px rgba(0,0,0,0.35);
