@@ -296,15 +296,15 @@ describe('normaliseMsisdn', () => {
 // ---------------------------------------------------------------------------
 
 describe('buildWhatsAppLink', () => {
-  it('builds correct wa.me URL', () => {
+  it('builds correct WhatsApp URL', () => {
     const url = buildWhatsAppLink('0123456789', 'Kak Ros', 'kembung', 18, '2026-11-01');
-    assert.ok(url.startsWith('https://wa.me/60123456789?text='));
+    assert.ok(url.startsWith('https://api.whatsapp.com/send?phone=60123456789&text='));
     assert.ok(url.includes('Kak+Ros') || url.includes('Kak%20Ros'));
   });
 
   it('encodes message', () => {
     const url = buildWhatsAppLink('0123456789', 'Ali', 'ayam', 25.5, null);
-    assert.ok(url.includes('wa.me'));
+    assert.ok(url.includes('api.whatsapp.com/send'));
     // Should be URI-encoded (spaces become %20 or +)
     assert.ok(!url.includes(' '));
   });
@@ -348,23 +348,23 @@ describe('buildReminder', () => {
     assert.equal(url, '');
   });
 
-  it('URL starts with https://wa.me/60', () => {
+  it('URL starts with https://api.whatsapp.com/send?phone=60', () => {
     const e = entry({ id: 'r1', customer: 'Ali', amountRM: 20, dueDate: null });
     const url = buildReminder([e], 'Ali', '0123456789', TODAY, 'ms');
-    assert.ok(url.startsWith('https://wa.me/60'), `got: ${url.slice(0, 40)}`);
+    assert.ok(url.startsWith('https://api.whatsapp.com/send?phone=60'), `got: ${url.slice(0, 40)}`);
   });
 
   it('normalises phone number in URL', () => {
     const e = entry({ id: 'r2', customer: 'Ali', amountRM: 20, dueDate: null });
     const url = buildReminder([e], 'Ali', '012-345-6789', TODAY, 'ms');
-    assert.ok(url.startsWith('https://wa.me/60123456789'), `got: ${url.slice(0, 50)}`);
+    assert.ok(url.startsWith('https://api.whatsapp.com/send?phone=60123456789'), `got: ${url.slice(0, 50)}`);
   });
 
   it('does not include paid entries in message', () => {
     const unpaid = entry({ id: 'u1', customer: 'Siti', item: 'ayam', amountRM: 15, dueDate: null });
     const paid   = { ...entry({ id: 'p2', customer: 'Siti', item: 'sayur', amountRM: 5, dueDate: null }), paid: true };
     const url = buildReminder([unpaid, paid], 'Siti', '0123456789', TODAY, 'ms');
-    const decoded = decodeURIComponent(url.split('?text=')[1]);
+    const decoded = decodeURIComponent(url.split('&text=')[1]);
     assert.ok(decoded.includes('ayam'), 'should include unpaid item');
     assert.ok(!decoded.includes('sayur'), 'should NOT include paid item');
   });
@@ -373,7 +373,7 @@ describe('buildReminder', () => {
     const ali  = entry({ id: 'a1', customer: 'Ali',  item: 'ayam',   amountRM: 15, dueDate: null });
     const siti = entry({ id: 's1', customer: 'Siti', item: 'kembung', amountRM: 20, dueDate: null });
     const url = buildReminder([ali, siti], 'Ali', '0123456789', TODAY, 'ms');
-    const decoded = decodeURIComponent(url.split('?text=')[1]);
+    const decoded = decodeURIComponent(url.split('&text=')[1]);
     assert.ok(decoded.includes('ayam'), 'should include Ali item');
     assert.ok(!decoded.includes('kembung'), 'should NOT include Siti item');
   });
@@ -381,7 +381,7 @@ describe('buildReminder', () => {
   it('includes Malay ghost line when any entry is overdue', () => {
     const overdue = entry({ id: 'o1', customer: 'Ros', item: 'ikan', amountRM: 10, dueDate: '2026-10-01' });
     const url = buildReminder([overdue], 'Ros', '0123456789', TODAY, 'ms');
-    const decoded = decodeURIComponent(url.split('?text=')[1]);
+    const decoded = decodeURIComponent(url.split('&text=')[1]);
     assert.ok(decoded.includes('Hantu Buku 555'), `expected ghost line, got: ${decoded.slice(0, 80)}`);
     assert.ok(decoded.includes('abaikan'), 'expected abaikan sign-off');
   });
@@ -389,7 +389,7 @@ describe('buildReminder', () => {
   it('does NOT include ghost line when all entries are not overdue', () => {
     const future = entry({ id: 'f1', customer: 'Ros', item: 'ikan', amountRM: 10, dueDate: '2026-12-01' });
     const url = buildReminder([future], 'Ros', '0123456789', TODAY, 'ms');
-    const decoded = decodeURIComponent(url.split('?text=')[1]);
+    const decoded = decodeURIComponent(url.split('&text=')[1]);
     assert.ok(!decoded.includes('Hantu Buku 555'), 'should NOT have ghost for future entry');
     assert.ok(decoded.includes('Harap'), 'expected gentle sign-off');
   });
@@ -398,14 +398,14 @@ describe('buildReminder', () => {
     const todayISO = `${TODAY.getFullYear()}-${String(TODAY.getMonth()+1).padStart(2,'0')}-${String(TODAY.getDate()).padStart(2,'0')}`;
     const todayEntry = entry({ id: 't1', customer: 'Ros', item: 'ikan', amountRM: 10, dueDate: todayISO });
     const url = buildReminder([todayEntry], 'Ros', '0123456789', TODAY, 'ms');
-    const decoded = decodeURIComponent(url.split('?text=')[1]);
+    const decoded = decodeURIComponent(url.split('&text=')[1]);
     assert.ok(decoded.includes('hari ini'), `expected hari ini, got: ${decoded}`);
   });
 
   it('builds correct English message', () => {
     const e = entry({ id: 'en1', customer: 'Ali', item: 'chicken', amountRM: 25, dueDate: null });
     const url = buildReminder([e], 'Ali', '0123456789', TODAY, 'en');
-    const decoded = decodeURIComponent(url.split('?text=')[1]);
+    const decoded = decodeURIComponent(url.split('&text=')[1]);
     assert.ok(decoded.includes('Hello'), 'expected English greeting');
     assert.ok(decoded.includes('Thank you'), 'expected English sign-off');
     assert.ok(decoded.includes('Outstanding'), 'expected English heading');
@@ -414,7 +414,7 @@ describe('buildReminder', () => {
   it('English ghost line when overdue', () => {
     const overdue = entry({ id: 'eo1', customer: 'Ali', item: 'chicken', amountRM: 25, dueDate: '2026-09-01' });
     const url = buildReminder([overdue], 'Ali', '0123456789', TODAY, 'en');
-    const decoded = decodeURIComponent(url.split('?text=')[1]);
+    const decoded = decodeURIComponent(url.split('&text=')[1]);
     assert.ok(decoded.includes('Ghost'), 'expected English ghost line');
     assert.ok(decoded.includes('ignore'), 'expected English ignore sign-off');
   });
@@ -423,7 +423,7 @@ describe('buildReminder', () => {
     const e1 = entry({ id: 'm1', customer: 'Ali', item: 'ayam',  amountRM: 15, dueDate: null });
     const e2 = entry({ id: 'm2', customer: 'Ali', item: 'ikan',  amountRM: 10, dueDate: null });
     const url = buildReminder([e1, e2], 'Ali', '0123456789', TODAY, 'ms');
-    const decoded = decodeURIComponent(url.split('?text=')[1]);
+    const decoded = decodeURIComponent(url.split('&text=')[1]);
     // Total is 25.00
     assert.ok(decoded.includes('25.00'), `expected total 25.00 in message: ${decoded}`);
   });
@@ -459,7 +459,7 @@ describe('buildReminder — PBT: message total = sum of unpaid', () => {
             return url === '';
           }
           const url = buildReminder(entries, 'Ali', '0123456789', new Date(2026, 9, 30), 'ms');
-          const decoded = decodeURIComponent(url.split('?text=')[1] ?? '');
+          const decoded = decodeURIComponent(url.split('&text=')[1] ?? '');
           const expectedTotal = Math.round(unpaid.reduce((s, e) => s + e.amountRM, 0) * 100) / 100;
           return decoded.includes(expectedTotal.toFixed(2));
         }
@@ -496,7 +496,7 @@ describe('buildReminder — PBT: paid entries never appear', () => {
           if (unpaid.length === 0) return true;
 
           const url = buildReminder(entries, 'Ali', '0123456789', new Date(2026, 9, 30), 'ms');
-          const decoded = decodeURIComponent(url.split('?text=')[1] ?? '');
+          const decoded = decodeURIComponent(url.split('&text=')[1] ?? '');
 
           // No paid-only item should appear unless it's also in an unpaid entry
           const unpaidItems = new Set(unpaid.map(e => e.item));
@@ -513,7 +513,7 @@ describe('buildReminder — PBT: paid entries never appear', () => {
   });
 });
 
-describe('buildReminder — PBT: URL always starts https://wa.me/60', () => {
+describe('buildReminder — PBT: URL always starts https://api.whatsapp.com/send?phone=60', () => {
   it('PBT: URL prefix is correct for any non-empty unpaid ledger', () => {
     const arbEntry = fc.record({
       id:        fc.uuid(),
@@ -538,7 +538,7 @@ describe('buildReminder — PBT: URL always starts https://wa.me/60', () => {
         arbPhone,
         (entries, phone) => {
           const url = buildReminder(entries, 'Ali', phone, new Date(2026, 9, 30), 'ms');
-          return url.startsWith('https://wa.me/60');
+          return url.startsWith('https://api.whatsapp.com/send?phone=60');
         }
       ),
       { numRuns: 200 }
@@ -551,15 +551,15 @@ describe('buildReminder — PBT: URL always starts https://wa.me/60', () => {
 // ---------------------------------------------------------------------------
 
 describe('buildWhatsAppLink', () => {
-  it('builds correct wa.me URL', () => {
+  it('builds correct WhatsApp URL', () => {
     const url = buildWhatsAppLink('0123456789', 'Kak Ros', 'kembung', 18, '2026-11-01');
-    assert.ok(url.startsWith('https://wa.me/60123456789?text='));
+    assert.ok(url.startsWith('https://api.whatsapp.com/send?phone=60123456789&text='));
     assert.ok(url.includes('Kak+Ros') || url.includes('Kak%20Ros'));
   });
 
   it('encodes message', () => {
     const url = buildWhatsAppLink('0123456789', 'Ali', 'ayam', 25.5, null);
-    assert.ok(url.includes('wa.me'));
+    assert.ok(url.includes('api.whatsapp.com/send'));
     // Should be URI-encoded (spaces become %20 or +)
     assert.ok(!url.includes(' '));
   });
@@ -962,5 +962,15 @@ describe('topDebtors — PBT: totalOwed is always >= 0', () => {
       ),
       { numRuns: 150 }
     );
+  });
+});
+
+describe('buildReminder — emoji survive URL encoding', () => {
+  it('ghost emoji is encoded as real UTF-8, never U+FFFD', async () => {
+    const { buildReminder } = await import('../ledger.js');
+    const e = [{ id: 'x', customer: 'Kak Ros', item: 'beras', qty: 1, amountRM: 5, dueDate: '2026-10-01', paid: false }];
+    const url = buildReminder(e, 'Kak Ros', '0123456789', new Date(2026, 9, 31), 'ms');
+    assert.ok(url.includes('%F0%9F%91%BB'));
+    assert.ok(!url.includes('%EF%BF%BD'));
   });
 });
