@@ -42,6 +42,9 @@ const STRINGS = {
   btnWhatsApp:       { ms: '📲 Hantar Peringatan',          en: '📲 Send Reminder' },
   btnDelete:         { ms: '🗑 Padam',                       en: '🗑 Delete' },
   btnExport:         { ms: '📤 Eksport',                    en: '📤 Export' },
+  btnDemo:           { ms: '👻 Cuba Demo',                 en: '👻 Try Demo' },
+  confirmDemo:       { ms: 'Ganti buku sekarang dengan data demo?', en: 'Replace your current book with demo data?' },
+  toastDemo:         { ms: 'Data demo dimuatkan. Hantu dah sampai 👻', en: 'Demo data loaded. The ghosts have arrived 👻' },
   btnImport:         { ms: '📥 Import',                     en: '📥 Import' },
 
   // Ghost / paid

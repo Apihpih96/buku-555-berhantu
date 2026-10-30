@@ -19,6 +19,7 @@ import {
   importJSON,
   buildReminder,
   normaliseMsisdn,
+  demoEntries,
 } from './ledger.js';
 import { t, DEFAULT_LANG } from './i18n.js';
 
@@ -106,6 +107,7 @@ function renderInput() {
   }
 
   $('btn-export').textContent = T('btnExport');
+  if ($('btn-demo')) $('btn-demo').textContent = T('btnDemo');
   $('btn-import').textContent = T('btnImport');
 }
 
@@ -559,8 +561,23 @@ function init() {
   $('btn-lang').addEventListener('click', onLangToggle);
   $('btn-export').addEventListener('click', onExport);
   $('btn-import').addEventListener('click', onImport);
+  if ($('btn-demo')) $('btn-demo').addEventListener('click', () => onLoadDemo(true));
+
+  if (new URLSearchParams(location.search).has('demo')) onLoadDemo(false);
 
   renderAll();
+}
+
+/**
+ * Load the sample warung ledger (dates relative to today).
+ * @param {boolean} ask — confirm before replacing a non-empty ledger
+ */
+function onLoadDemo(ask) {
+  if (ask && ledger.length > 0 && !confirm(T('confirmDemo'))) return;
+  ledger = demoEntries(new Date());
+  saveState();
+  renderAll();
+  showFeedback(T('toastDemo'));
 }
 
 // Run when DOM is ready

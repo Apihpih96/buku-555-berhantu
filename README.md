@@ -5,6 +5,16 @@
 
 ---
 
+
+## 👻 Try the demo in 10 seconds
+
+Open **https://apihpih96.github.io/buku-555-berhantu/?demo=1** (or tap **👻 Cuba Demo** in the footer).
+It loads a sample warung book dated relative to today: Pak Mat and Kak Ros are overdue (ghosts appear),
+Abang Jeff is due today, Mak Cik Timah is next week, and Adik Hafiz has paid.
+
+Then tap **📲 Hantar Peringatan** on Kak Ros: enter any number once, and WhatsApp opens with one polite
+message listing everything she owes and the total. Nothing is sent until you press send.
+
 ## Apa ini? / What is this?
 
 Malaysian market traders have tracked customer credit ("hutang") for decades using the iconic red-and-blue **Buku 555** notebook. Paper gets wet at the fish stall, pages get lost, and asking a neighbour for money is awkward.
