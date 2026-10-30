@@ -49,3 +49,4 @@ Numbered checklist of implementation tasks. Each task references the requirement
 - [x] T-20 Replace `window.prompt` phone-number flow in `app.js` with the in-app `<dialog>` — open dialog when number unknown, call `buildReminder` + `window.open` when confirmed or number already known (FR-4.4, FR-4.5)
 - [x] T-21 Write `buildReminder` unit tests and PBT properties in `tests/ledger.test.js`: message total = sum of unpaid, paid entries excluded, URL starts `https://wa.me/60`, tone variants (AC-8, AC-9, AC-10, Design §Correctness Properties 10–13)
 - [x] T-22 Run `npm test`; fix failures until all pass
+- [x] T-23 Add `demoEntries(today)` sample ledger, 👻 Cuba Demo button and `?demo=1` deep link for judges; test it always yields overdue, due-today, upcoming and paid entries
