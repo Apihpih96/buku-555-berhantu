@@ -600,3 +600,27 @@ h1 {
   .app-main { max-width: 100%; padding: 0; }
   body { background: #fff; font-size: 12pt; }
 }
+
+/* ---------- Install button ---------- */
+.btn-install[hidden] { display: none; }
+.btn-install {
+  min-height: 48px; padding: 0 14px; margin-left: 8px;
+  background: var(--paper); color: var(--red-dark);
+  border: 2px solid var(--paper); border-radius: 10px; font-weight: 700;
+}
+
+/* ---------- Siapa paling lama hutang ---------- */
+.top-debtors-card[hidden] { display: none; }
+.top-debtors-card {
+  background: #fff8e7; border: 2px dashed var(--red); border-radius: 12px;
+  padding: 12px 16px; margin: 0 0 16px;
+}
+.top-debtors-title { margin: 0 0 8px; font-size: 1.1rem; color: var(--red-dark); }
+.top-debtors-list { margin: 0; padding-left: 1.4em; }
+.top-debtors-list li { padding: 6px 0; border-bottom: 1px solid var(--paper-line); }
+.top-debtors-list li:last-child { border-bottom: none; }
+.top-debtors-list li * + * { margin-left: 8px; }
+.top-debtor-name { font-weight: 700; }
+.top-debtor-amount { color: var(--red); font-weight: 700; }
+.top-debtor-status { font-size: 0.9rem; font-style: italic; }
+.top-debtor-row.overdue .top-debtor-status { color: var(--red-dark); }

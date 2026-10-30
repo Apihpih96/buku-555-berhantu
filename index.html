@@ -27,6 +27,15 @@
         aria-label="Tukar ke Bahasa Inggeris"
         type="button"
       >EN</button>
+
+      <!-- PWA install button — hidden until beforeinstallprompt fires -->
+      <button
+        id="btn-install"
+        class="btn btn-install"
+        type="button"
+        aria-label="Pasang app"
+        hidden
+      >📲 Pasang app</button>
     </div>
   </header>
 
@@ -71,6 +80,19 @@
     <section class="summary-bar" aria-label="Jumlah hutang tertunggak">
       <span id="total-label" class="total-label">Jumlah Tertunggak</span>
       <span id="total-amount" class="total-amount">RM0.00</span>
+    </section>
+
+    <!-- ---- Top debtors card ---- -->
+    <section
+      id="top-debtors"
+      class="top-debtors-card"
+      aria-label="Kad penghutang terlama"
+      hidden
+    >
+      <h2 id="top-debtors-title" class="top-debtors-title">Siapa paling lama hutang? 👻</h2>
+      <ol id="top-debtors-list" class="top-debtors-list">
+        <!-- Rows rendered by app.js -->
+      </ol>
     </section>
 
     <!-- ---- Ledger list ---- -->

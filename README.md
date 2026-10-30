@@ -150,3 +150,16 @@ MIT © 2026 Mohammad Afif bin Mohd Saberi
 ---
 
 *"Hantu hutang paling menakutkan." 👻*
+
+## 🛠️ Built with Kiro
+
+- **Steering** (`.kiro/steering/`): Malay-first copy, no server or tracking, big tap targets for older traders.
+- **Spec** (`.kiro/specs/buku-555/`): EARS requirements, a design with correctness properties, and tasks T-1 to T-27 that Kiro completed one by one.
+- **Agent hooks** (`.kiro/hooks/`):
+  - `run-tests-on-save` runs `npm test` whenever a `.js` file is saved and fixes failures without weakening tests.
+  - `i18n-check` checks every key in `i18n.js` has both Malay and English when that file changes.
+- **Tests**: node:test plus fast-check property tests for the parser, ledger, reminders and top-debtors ranking.
+
+## 📲 Install it
+
+Open the app in Chrome on Android and tap **📲 Pasang app** (or Add to Home screen). It works offline at the pasar malam.

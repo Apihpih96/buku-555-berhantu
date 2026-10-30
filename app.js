@@ -20,6 +20,7 @@ import {
   buildReminder,
   normaliseMsisdn,
   demoEntries,
+  topDebtors,
 } from './ledger.js';
 import { t, DEFAULT_LANG } from './i18n.js';
 
@@ -40,6 +41,12 @@ let ledger = [];
  * @type {Record<string, string>}
  */
 let phones = {};
+
+/**
+ * Deferred beforeinstallprompt event, held until the user taps the install button.
+ * @type {Event|null}
+ */
+let deferredInstallPrompt = null;
 
 // ---------------------------------------------------------------------------
 // localStorage helpers
@@ -84,6 +91,7 @@ const T = (key) => t(key, lang);
 function renderAll() {
   renderHeader();
   renderInput();
+  renderTopDebtors();
   renderLedger();
 }
 
@@ -92,6 +100,14 @@ function renderHeader() {
   $('app-subtitle').textContent = T('appSubtitle');
   $('btn-lang').textContent = T('langToggle');
   $('btn-lang').setAttribute('aria-label', T('ariaLangToggle'));
+
+  // Update install button label when visible
+  const installBtn = $('btn-install');
+  if (installBtn) {
+    const installLabel = lang === 'en' ? '📲 Install app' : '📲 Pasang app';
+    installBtn.textContent = installLabel;
+    installBtn.setAttribute('aria-label', installLabel);
+  }
 }
 
 function renderInput() {
@@ -109,6 +125,61 @@ function renderInput() {
   $('btn-export').textContent = T('btnExport');
   if ($('btn-demo')) $('btn-demo').textContent = T('btnDemo');
   $('btn-import').textContent = T('btnImport');
+}
+
+/**
+ * Render the top-debtors card above the ledger.
+ * Hidden when no unpaid entries exist.
+ */
+function renderTopDebtors() {
+  const card = $('top-debtors');
+  if (!card) return;
+
+  const today = new Date();
+  const debtors = topDebtors(ledger, today, 3);
+
+  if (debtors.length === 0) {
+    card.hidden = true;
+    return;
+  }
+
+  card.hidden = false;
+  $('top-debtors-title').textContent = T('topDebtorsTitle');
+  card.setAttribute('aria-label', T('ariaTopDebtors'));
+
+  const list = $('top-debtors-list');
+  list.innerHTML = '';
+
+  for (const debtor of debtors) {
+    const li = document.createElement('li');
+    li.className = 'top-debtor-row' + (debtor.daysOverdue > 0 ? ' overdue' : '');
+
+    const nameEl = document.createElement('span');
+    nameEl.className = 'top-debtor-name';
+    nameEl.textContent = debtor.customer;
+
+    const amtEl = document.createElement('span');
+    amtEl.className = 'top-debtor-amount';
+    amtEl.textContent = `RM${debtor.totalOwed.toFixed(2)}`;
+
+    const statusEl = document.createElement('span');
+    statusEl.className = 'top-debtor-status';
+    if (debtor.daysOverdue > 0) {
+      if (lang === 'en') {
+        statusEl.textContent = `${debtor.daysOverdue} ${T('topDebtorsDaysOverdue')}`;
+      } else {
+        statusEl.textContent = `${T('topDebtorsDaysOverdue')} ${debtor.daysOverdue} ${T('topDebtorsDaysSuffix')}`;
+      }
+      statusEl.classList.add('overdue-status');
+    } else {
+      statusEl.textContent = T('topDebtorsNotOverdue');
+    }
+
+    li.appendChild(nameEl);
+    li.appendChild(amtEl);
+    li.appendChild(statusEl);
+    list.appendChild(li);
+  }
 }
 
 function renderLedger() {
@@ -562,6 +633,43 @@ function init() {
   $('btn-export').addEventListener('click', onExport);
   $('btn-import').addEventListener('click', onImport);
   if ($('btn-demo')) $('btn-demo').addEventListener('click', () => onLoadDemo(true));
+
+  // ---- PWA: service worker registration ----
+  if ('serviceWorker' in navigator) {
+    // Use relative path so it works under /buku-555-berhantu/ on GitHub Pages
+    navigator.serviceWorker.register('./sw.js').catch((err) => {
+      console.warn('[sw] Registration failed:', err);
+    });
+  }
+
+  // ---- PWA: install button ----
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    const installBtn = $('btn-install');
+    if (installBtn) {
+      installBtn.hidden = false;
+    }
+  });
+
+  window.addEventListener('appinstalled', () => {
+    deferredInstallPrompt = null;
+    const installBtn = $('btn-install');
+    if (installBtn) {
+      installBtn.hidden = true;
+    }
+  });
+
+  const installBtn = $('btn-install');
+  if (installBtn) {
+    installBtn.addEventListener('click', async () => {
+      if (!deferredInstallPrompt) return;
+      deferredInstallPrompt.prompt();
+      await deferredInstallPrompt.userChoice;
+      deferredInstallPrompt = null;
+      installBtn.hidden = true;
+    });
+  }
 
   if (new URLSearchParams(location.search).has('demo')) onLoadDemo(false);
 

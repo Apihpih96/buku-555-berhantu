@@ -432,6 +432,95 @@ export function formatLocalDate(isoDate, lang = 'ms') {
 }
 
 // ---------------------------------------------------------------------------
+// Top Debtors
+// ---------------------------------------------------------------------------
+
+/**
+ * @typedef {Object} DebtorSummary
+ * @property {string} customer
+ * @property {number} totalOwed    — sum of unpaid amountRM, rounded to 2 dp
+ * @property {number} daysOverdue  — days since oldest unpaid due date; 0 if not overdue
+ */
+
+/**
+ * Return the top-N customers ranked by how overdue they are.
+ *
+ * Ranking rule:
+ *   1. daysOverdue descending (most overdue first)
+ *   2. totalOwed descending (largest debt breaks ties)
+ *
+ * Only customers with at least one unpaid entry are included.
+ * Uses LOCAL calendar dates — never toISOString().
+ *
+ * @param {LedgerEntry[]}   ledger
+ * @param {Date|string}     today    — reference date
+ * @param {number}          [n=3]    — maximum results to return
+ * @returns {DebtorSummary[]}
+ */
+export function topDebtors(ledger, today = new Date(), n = 3) {
+  const todayISO = typeof today === 'string' ? today : localISO(today);
+
+  // Group unpaid entries by customer
+  /** @type {Map<string, LedgerEntry[]>} */
+  const byCustomer = new Map();
+  for (const e of ledger) {
+    if (e.paid) continue;
+    const list = byCustomer.get(e.customer) ?? [];
+    list.push(e);
+    byCustomer.set(e.customer, list);
+  }
+
+  /** @type {DebtorSummary[]} */
+  const summaries = [];
+
+  for (const [customer, entries] of byCustomer) {
+    const totalOwed = round2(entries.reduce((s, e) => s + e.amountRM, 0));
+
+    // Find the oldest (min) due date among entries that have one
+    let oldestDue = null;
+    for (const e of entries) {
+      if (e.dueDate !== null) {
+        if (oldestDue === null || e.dueDate < oldestDue) {
+          oldestDue = e.dueDate;
+        }
+      }
+    }
+
+    // Compute days overdue — 0 if due date is today or in the future
+    let daysOverdue = 0;
+    if (oldestDue !== null && oldestDue < todayISO) {
+      daysOverdue = calendarDaysDiff(oldestDue, todayISO);
+    }
+
+    summaries.push({ customer, totalOwed, daysOverdue });
+  }
+
+  // Sort: most overdue first, then by largest debt
+  summaries.sort((a, b) => {
+    if (b.daysOverdue !== a.daysOverdue) return b.daysOverdue - a.daysOverdue;
+    return b.totalOwed - a.totalOwed;
+  });
+
+  return summaries.slice(0, n);
+}
+
+/**
+ * Count calendar days between two ISO date strings (or a Date and ISO string).
+ * Returns a non-negative integer.
+ *
+ * @param {string} fromISO  — earlier date "YYYY-MM-DD"
+ * @param {string} toISO    — later date "YYYY-MM-DD"
+ * @returns {number}
+ */
+function calendarDaysDiff(fromISO, toISO) {
+  const [fy, fm, fd] = fromISO.split('-').map(Number);
+  const [ty, tm, td] = toISO.split('-').map(Number);
+  const from = new Date(fy, fm - 1, fd);
+  const to   = new Date(ty, tm - 1, td);
+  return Math.max(0, Math.floor((to - from) / 86400000));
+}
+
+// ---------------------------------------------------------------------------
 // Demo data
 // ---------------------------------------------------------------------------
 

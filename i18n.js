@@ -78,6 +78,13 @@ const STRINGS = {
   ariaPhoneSimpan:  { ms: 'Simpan nombor telefon',          en: 'Save phone number' },
   ariaPhoneBatal:   { ms: 'Batal — tutup dialog',           en: 'Cancel — close dialog' },
 
+  // Top debtors card
+  topDebtorsTitle:        { ms: 'Siapa paling lama hutang? 👻', en: 'Who has owed longest? 👻' },
+  topDebtorsDaysOverdue:  { ms: 'tertunggak',                   en: 'days overdue' },
+  topDebtorsDaysSuffix:   { ms: 'hari',                         en: '' },
+  topDebtorsNotOverdue:   { ms: 'belum tertunggak',             en: 'not yet overdue' },
+  ariaTopDebtors:         { ms: 'Kad penghutang terlama',       en: 'Longest outstanding debtors card' },
+
   // Accessibility
   ariaEntry:         { ms: 'Rekod hutang',                  en: 'Debt entry' },
   ariaGhost:         { ms: 'Ikon hantu (tertunggak)',        en: 'Ghost icon (overdue)' },
