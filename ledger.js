@@ -173,24 +173,27 @@ export function customerTotal(ledger, customer) {
 // ---------------------------------------------------------------------------
 
 /**
- * Serialise ledger to JSON string.
+ * Serialise ledger to JSON string, optionally including the phones map.
  *
- * @param {LedgerEntry[]} ledger
+ * @param {LedgerEntry[]}            ledger
+ * @param {Record<string,string>}    [phones]  — customer → normalised msisdn
  * @returns {string}
  */
-export function exportJSON(ledger) {
-  return JSON.stringify({ version: 1, entries: ledger }, null, 2);
+export function exportJSON(ledger, phones = {}) {
+  return JSON.stringify({ version: 1, entries: ledger, phones }, null, 2);
 }
 
 /**
  * Merge an imported JSON backup into the current ledger.
  * Deduplicates by entry id (existing entries take precedence).
+ * Also extracts the phones map from the backup if present.
  *
- * @param {string}        json
- * @param {LedgerEntry[]} currentLedger
- * @returns {LedgerEntry[]}
+ * @param {string}                   json
+ * @param {LedgerEntry[]}            currentLedger
+ * @param {Record<string,string>}    [currentPhones]
+ * @returns {{ ledger: LedgerEntry[], phones: Record<string,string> }}
  */
-export function importJSON(json, currentLedger) {
+export function importJSON(json, currentLedger, currentPhones = {}) {
   let parsed;
   try {
     parsed = JSON.parse(json);
@@ -204,7 +207,15 @@ export function importJSON(json, currentLedger) {
 
   const existingIds = new Set(currentLedger.map(e => e.id));
   const newEntries = incoming.filter(e => !existingIds.has(e.id));
-  return [...currentLedger, ...newEntries];
+  const mergedLedger = [...currentLedger, ...newEntries];
+
+  // Merge phones: existing take precedence (same as entries dedup)
+  const backupPhones = (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+    ? (parsed.phones ?? {})
+    : {};
+  const mergedPhones = { ...backupPhones, ...currentPhones };
+
+  return { ledger: mergedLedger, phones: mergedPhones };
 }
 
 // ---------------------------------------------------------------------------
@@ -252,6 +263,109 @@ export function buildWhatsAppLink(msisdn, customer, item, amountRM, dueDate) {
   return `https://wa.me/${normalised}?text=${encodeURIComponent(msg)}`;
 }
 
+/**
+ * Build a WhatsApp wa.me link with a reminder covering ALL of a customer's
+ * unpaid entries. Tone adapts based on whether any entry is overdue.
+ *
+ * Uses LOCAL calendar dates — never toISOString() for display.
+ *
+ * @param {LedgerEntry[]}  entries   — full ledger (function filters internally)
+ * @param {string}         customer  — customer name
+ * @param {string}         msisdn    — raw phone number (will be normalised)
+ * @param {Date}           today     — reference date for overdue detection
+ * @param {'ms' | 'en'}    [lang]    — UI language, default 'ms'
+ * @returns {string}                 — full https://wa.me/... URL, or '' if no unpaid
+ */
+export function buildReminder(entries, customer, msisdn, today = new Date(), lang = 'ms') {
+  const unpaid = entries.filter(e => !e.paid && e.customer === customer);
+  if (unpaid.length === 0) return '';
+
+  const todayISO = localDateISO(today);
+
+  // Detect status: any overdue? any due today?
+  let anyOverdue = false;
+  let anyToday = false;
+  for (const e of unpaid) {
+    if (e.dueDate !== null) {
+      if (e.dueDate < todayISO) anyOverdue = true;
+      if (e.dueDate === todayISO) anyToday = true;
+    }
+  }
+
+  const total = round2(unpaid.reduce((s, e) => s + e.amountRM, 0));
+
+  const lines = [];
+
+  if (lang === 'en') {
+    lines.push(`Hello ${customer}, 👋`);
+    lines.push('');
+    if (anyOverdue) {
+      lines.push('The Buku 555 Ghost has come to visit 👻');
+      lines.push('');
+    }
+    lines.push('Outstanding balance:');
+    for (const e of unpaid) {
+      const itemStr = e.qty ? `${e.item} ×${e.qty}` : e.item;
+      let duePart = '';
+      if (e.dueDate) {
+        if (e.dueDate < todayISO) {
+          duePart = ` (overdue since ${formatLocalDate(e.dueDate, 'en')})`;
+        } else if (e.dueDate === todayISO) {
+          duePart = ' (today)';
+        } else {
+          duePart = ` (pay by ${formatLocalDate(e.dueDate, 'en')})`;
+        }
+      }
+      lines.push(`• ${itemStr} — RM${e.amountRM.toFixed(2)}${duePart}`);
+    }
+    lines.push('');
+    lines.push(`Total: RM${total.toFixed(2)}`);
+    lines.push('');
+    if (anyOverdue) {
+      lines.push("If you've already paid, please ignore this.");
+    } else {
+      lines.push('Hope to settle this soon.');
+    }
+    lines.push('Thank you 🙏');
+  } else {
+    // Malay (default)
+    lines.push(`Assalamualaikum ${customer}, 👋`);
+    lines.push('');
+    if (anyOverdue) {
+      lines.push('Hantu Buku 555 datang menjenguk 👻');
+      lines.push('');
+    }
+    lines.push('Hutang belum dijelaskan:');
+    for (const e of unpaid) {
+      const itemStr = e.qty ? `${e.item} ×${e.qty}` : e.item;
+      let duePart = '';
+      if (e.dueDate) {
+        if (e.dueDate < todayISO) {
+          duePart = ` (tertunggak sejak ${formatLocalDate(e.dueDate, 'ms')})`;
+        } else if (e.dueDate === todayISO) {
+          duePart = ' (hari ini)';
+        } else {
+          duePart = ` (bayar sebelum ${formatLocalDate(e.dueDate, 'ms')})`;
+        }
+      }
+      lines.push(`• ${itemStr} — RM${e.amountRM.toFixed(2)}${duePart}`);
+    }
+    lines.push('');
+    lines.push(`Jumlah: RM${total.toFixed(2)}`);
+    lines.push('');
+    if (anyOverdue) {
+      lines.push('Kalau dah bayar, abaikan ya.');
+    } else {
+      lines.push('Harap dapat dijelaskan tidak lama lagi.');
+    }
+    lines.push('Terima kasih 🙏');
+  }
+
+  const text = lines.join('\n');
+  const normalised = normaliseMsisdn(msisdn);
+  return `https://wa.me/${normalised}?text=${encodeURIComponent(text)}`;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -277,4 +391,42 @@ function uid() {
 function localISO(d) {
   const pad = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/**
+ * Local calendar date as YYYY-MM-DD from a Date object (exported alias).
+ * @param {Date} d
+ * @returns {string}
+ */
+export function localDateISO(d) {
+  return localISO(d);
+}
+
+// Day/month name tables for local formatting (avoids locale dependency in Node tests)
+const MS_DAYS   = ['Ahad','Isnin','Selasa','Rabu','Khamis','Jumaat','Sabtu'];
+const MS_MONTHS = ['Jan','Feb','Mac','Apr','Mei','Jun','Jul','Ogo','Sep','Okt','Nov','Dis'];
+const EN_DAYS   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const EN_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+/**
+ * Format an ISO date string (YYYY-MM-DD) as a human-readable local date.
+ * Parses as midnight local time to avoid UTC-shift problems.
+ *
+ * @param {string}          isoDate  — "YYYY-MM-DD"
+ * @param {'ms' | 'en'}     lang
+ * @returns {string}                 — e.g. "Jumaat, 6 Nov" / "Friday, 6 Nov"
+ */
+export function formatLocalDate(isoDate, lang = 'ms') {
+  if (!isoDate) return '';
+  const [year, month, day] = isoDate.split('-').map(Number);
+  // Construct as local midnight
+  const d = new Date(year, month - 1, day);
+  const dow = d.getDay();      // 0=Sun
+  const dom = d.getDate();
+  const mon = d.getMonth();    // 0-based
+
+  if (lang === 'en') {
+    return `${EN_DAYS[dow]}, ${dom} ${EN_MONTHS[mon]}`;
+  }
+  return `${MS_DAYS[dow]}, ${dom} ${MS_MONTHS[mon]}`;
 }

@@ -493,6 +493,106 @@ h1 {
 }
 
 /* ============================================================
+   PHONE DIALOG
+   ============================================================ */
+.phone-dialog {
+  border: none;
+  border-radius: var(--radius);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.35);
+  background: var(--paper);
+  color: var(--ink);
+  padding: 0;
+  max-width: min(92vw, 400px);
+  width: 100%;
+}
+
+/* Native <dialog> backdrop */
+.phone-dialog::backdrop {
+  background: rgba(0,0,0,0.55);
+}
+
+.phone-dialog-form {
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.phone-dialog-title {
+  font-size: 1.1rem;
+  color: var(--red-dark);
+  border-bottom: 2px solid var(--red-light);
+  padding-bottom: 0.4rem;
+}
+
+.phone-dialog-customer {
+  font-size: 0.9rem;
+  color: var(--ink-faded);
+  font-style: italic;
+}
+
+.phone-dialog-label {
+  font-size: 0.95rem;
+  font-weight: bold;
+}
+
+.phone-dialog-input {
+  min-height: 52px;
+  padding: 0.5rem 0.75rem;
+  font-size: 1.15rem;
+  font-family: var(--font-ui);
+  border: 2px solid var(--paper-line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  outline: none;
+  letter-spacing: 0.05em;
+  transition: border-color 0.2s;
+}
+.phone-dialog-input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px var(--blue-light);
+}
+
+.phone-dialog-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.btn-simpan {
+  background: var(--blue);
+  color: #fff;
+  font-weight: bold;
+  min-width: 90px;
+}
+.btn-simpan:hover { opacity: 0.88; }
+
+.btn-batal {
+  background: transparent;
+  color: var(--ink-faded);
+  border: 1px solid var(--paper-line);
+  min-width: 80px;
+}
+.btn-batal:hover { background: var(--paper-line); }
+
+/* "Tukar nombor" inline link */
+.link-tukar {
+  display: inline-block;
+  font-size: 0.78rem;
+  color: var(--blue);
+  text-decoration: underline;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0.2rem 0.3rem;
+  min-height: 32px;
+  font-family: var(--font-ui);
+  vertical-align: middle;
+}
+.link-tukar:hover { color: var(--red-dark); }
+
+/* ============================================================
    PRINT — hide chrome, show clean ledger
    ============================================================ */
 @media print {

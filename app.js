@@ -17,7 +17,8 @@ import {
   entriesByCustomer,
   exportJSON,
   importJSON,
-  buildWhatsAppLink,
+  buildReminder,
+  normaliseMsisdn,
 } from './ledger.js';
 import { t, DEFAULT_LANG } from './i18n.js';
 
@@ -33,6 +34,12 @@ let lang = DEFAULT_LANG;
 /** @type {import('./ledger.js').LedgerEntry[]} */
 let ledger = [];
 
+/**
+ * Map of customer name → normalised 60XXXXXXXXX phone number.
+ * @type {Record<string, string>}
+ */
+let phones = {};
+
 // ---------------------------------------------------------------------------
 // localStorage helpers
 // ---------------------------------------------------------------------------
@@ -40,7 +47,7 @@ let ledger = [];
 function saveState() {
   localStorage.setItem(
     STORAGE_KEY,
-    JSON.stringify({ version: 1, entries: ledger, lang })
+    JSON.stringify({ version: 1, entries: ledger, phones, lang })
   );
 }
 
@@ -50,9 +57,11 @@ function loadState() {
     if (!raw) return;
     const data = JSON.parse(raw);
     ledger = Array.isArray(data.entries) ? data.entries : [];
+    phones = (data.phones && typeof data.phones === 'object') ? data.phones : {};
     lang = data.lang === 'en' ? 'en' : 'ms';
   } catch {
     ledger = [];
+    phones = {};
     lang = 'ms';
   }
 }
@@ -220,13 +229,22 @@ function buildEntryCard(entry, isOverdue) {
     payBtn.addEventListener('click', () => onMarkPaid(entry.id));
     actions.appendChild(payBtn);
 
-    if (isOverdue) {
-      const waBtn = document.createElement('button');
-      waBtn.className = 'btn btn-wa';
-      waBtn.textContent = T('btnWhatsApp');
-      waBtn.setAttribute('aria-label', `${T('btnWhatsApp')} ${entry.customer}`);
-      waBtn.addEventListener('click', () => onWhatsApp(entry));
-      actions.appendChild(waBtn);
+    // Show reminder button on ALL unpaid entries (not just overdue)
+    const waBtn = document.createElement('button');
+    waBtn.className = 'btn btn-wa';
+    waBtn.textContent = T('btnWhatsApp');
+    waBtn.setAttribute('aria-label', `${T('btnWhatsApp')} ${entry.customer}`);
+    waBtn.addEventListener('click', () => onWhatsApp(entry.customer));
+    actions.appendChild(waBtn);
+
+    // "Tukar nombor" link — only shown if a number is already saved
+    if (phones[entry.customer]) {
+      const tukarBtn = document.createElement('button');
+      tukarBtn.className = 'link-tukar';
+      tukarBtn.textContent = T('linkTukarNombor');
+      tukarBtn.setAttribute('aria-label', `${T('linkTukarNombor')} — ${entry.customer}`);
+      tukarBtn.addEventListener('click', () => onTukarNombor(entry.customer));
+      actions.appendChild(tukarBtn);
     }
 
     const delBtn = document.createElement('button');
@@ -298,12 +316,46 @@ function onDelete(id) {
   renderLedger();
 }
 
-/** @param {import('./ledger.js').LedgerEntry} entry */
-function onWhatsApp(entry) {
-  // Prompt for phone number if not stored
-  const phone = prompt(`Nombor WhatsApp ${entry.customer}:`);
-  if (!phone) return;
-  const url = buildWhatsAppLink(phone, entry.customer, entry.item, entry.amountRM, entry.dueDate);
+/**
+ * Handle "Hantar Peringatan" click for a customer.
+ * If a phone is already saved, build and open immediately.
+ * Otherwise, open the in-app dialog to collect the number.
+ *
+ * @param {string} customer
+ */
+function onWhatsApp(customer) {
+  const savedPhone = phones[customer];
+  if (savedPhone) {
+    openWhatsAppReminder(customer, savedPhone);
+  } else {
+    openPhoneDialog(customer, (msisdn) => {
+      openWhatsAppReminder(customer, msisdn);
+    });
+  }
+}
+
+/**
+ * "Tukar nombor" — force the dialog even if a number is saved.
+ * @param {string} customer
+ */
+function onTukarNombor(customer) {
+  openPhoneDialog(customer, (msisdn) => {
+    // After saving new number, open WhatsApp immediately
+    openWhatsAppReminder(customer, msisdn);
+  });
+}
+
+/**
+ * Build reminder URL with buildReminder() and open in new tab.
+ * @param {string} customer
+ * @param {string} rawPhone
+ */
+function openWhatsAppReminder(customer, rawPhone) {
+  const url = buildReminder(ledger, customer, rawPhone, new Date(), lang);
+  if (!url) {
+    showFeedback(T('noEntries'), 'error');
+    return;
+  }
   window.open(url, '_blank', 'noopener');
 }
 
@@ -314,7 +366,7 @@ function onLangToggle() {
 }
 
 function onExport() {
-  const json = exportJSON(ledger);
+  const json = exportJSON(ledger, phones);
   const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -334,7 +386,9 @@ function onImport() {
     try {
       const text = await file.text();
       if (!confirm(T('confirmImport'))) return;
-      ledger = importJSON(text, ledger);
+      const result = importJSON(text, ledger, phones);
+      ledger = result.ledger;
+      phones = result.phones;
       saveState();
       renderLedger();
     } catch {
@@ -342,6 +396,73 @@ function onImport() {
     }
   });
   input.click();
+}
+
+// ---------------------------------------------------------------------------
+// Phone dialog
+// ---------------------------------------------------------------------------
+
+/**
+ * Open the in-app phone dialog for a customer.
+ * Calls onConfirm(normalisedMsisdn) when the user saves.
+ *
+ * @param {string}                  customer
+ * @param {(msisdn: string) => void} onConfirm
+ */
+function openPhoneDialog(customer, onConfirm) {
+  const dialog = /** @type {HTMLDialogElement} */ ($('phone-dialog'));
+  const customerEl = $('phone-dialog-customer');
+  const input = /** @type {HTMLInputElement} */ ($('phone-dialog-input'));
+  const simpanBtn = $('phone-dialog-simpan');
+  const batalBtn = $('phone-dialog-batal');
+
+  // Update dialog text for current language
+  $('phone-dialog-title').textContent = T('dialogPhoneTitle');
+  $('phone-dialog').setAttribute('aria-label', T('ariaPhoneDialog'));
+  input.setAttribute('aria-label', T('ariaPhoneInput'));
+  input.placeholder = T('dialogPhonePlaceholder');
+  simpanBtn.textContent = T('btnSimpan');
+  simpanBtn.setAttribute('aria-label', T('ariaPhoneSimpan'));
+  batalBtn.textContent = T('btnBatal');
+  batalBtn.setAttribute('aria-label', T('ariaPhoneBatal'));
+
+  customerEl.textContent = customer;
+
+  // Pre-fill with existing number if any (for easy edit)
+  input.value = phones[customer] ? phones[customer].replace(/^60/, '0') : '';
+
+  // Remove old listeners to avoid accumulation
+  const newSimpan = simpanBtn.cloneNode(true);
+  simpanBtn.replaceWith(newSimpan);
+  const newBatal = batalBtn.cloneNode(true);
+  batalBtn.replaceWith(newBatal);
+
+  $('phone-dialog-simpan').addEventListener('click', () => {
+    const raw = $('phone-dialog-input').value.trim();
+    if (!raw) {
+      $('phone-dialog-input').focus();
+      return;
+    }
+    const normalised = normaliseMsisdn(raw);
+    phones[customer] = normalised;
+    saveState();
+    renderLedger(); // refresh to show/hide Tukar nombor link
+    dialog.close();
+    onConfirm(normalised);
+  });
+
+  $('phone-dialog-batal').addEventListener('click', () => {
+    dialog.close();
+  });
+
+  // Close on backdrop click
+  dialog.addEventListener('click', (e) => {
+    if (e.target === dialog) dialog.close();
+  }, { once: true });
+
+  dialog.showModal();
+  // Focus input after modal opens
+  requestAnimationFrame(() => $('phone-dialog-input').focus());
 }
 
 // ---------------------------------------------------------------------------

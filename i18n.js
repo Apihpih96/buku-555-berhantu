@@ -61,6 +61,20 @@ const STRINGS = {
   confirmDelete:     { ms: 'Padam hutang ini?',             en: 'Delete this entry?' },
   confirmImport:     { ms: 'Gabungkan data import?',        en: 'Merge imported data?' },
 
+  // Phone number dialog
+  dialogPhoneTitle:      { ms: 'Nombor WhatsApp',           en: 'WhatsApp Number' },
+  dialogPhoneLabel:      { ms: 'Masukkan nombor telefon',   en: 'Enter phone number' },
+  dialogPhonePlaceholder:{ ms: '0123456789',                en: '0123456789' },
+  btnSimpan:             { ms: 'Simpan',                    en: 'Save' },
+  btnBatal:              { ms: 'Batal',                     en: 'Cancel' },
+  linkTukarNombor:       { ms: 'Tukar nombor',              en: 'Change number' },
+
+  // Accessibility — phone dialog
+  ariaPhoneDialog:  { ms: 'Dialog nombor WhatsApp',         en: 'WhatsApp number dialog' },
+  ariaPhoneInput:   { ms: 'Nombor telefon WhatsApp',        en: 'WhatsApp phone number' },
+  ariaPhoneSimpan:  { ms: 'Simpan nombor telefon',          en: 'Save phone number' },
+  ariaPhoneBatal:   { ms: 'Batal — tutup dialog',           en: 'Cancel — close dialog' },
+
   // Accessibility
   ariaEntry:         { ms: 'Rekod hutang',                  en: 'Debt entry' },
   ariaGhost:         { ms: 'Ikon hantu (tertunggak)',        en: 'Ghost icon (overdue)' },

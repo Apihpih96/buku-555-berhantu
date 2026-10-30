@@ -111,6 +111,48 @@
   <!-- Toast notification (injected by app.js) -->
   <div id="toast" class="toast" role="alert" aria-live="polite"></div>
 
+  <!-- ============================================================
+       PHONE NUMBER DIALOG
+  ============================================================ -->
+  <dialog
+    id="phone-dialog"
+    class="phone-dialog"
+    aria-label="Dialog nombor WhatsApp"
+    aria-modal="true"
+  >
+    <form method="dialog" class="phone-dialog-form" novalidate>
+      <h2 id="phone-dialog-title" class="phone-dialog-title">Nombor WhatsApp</h2>
+      <p id="phone-dialog-customer" class="phone-dialog-customer"></p>
+      <label for="phone-dialog-input" class="phone-dialog-label">
+        Masukkan nombor telefon
+      </label>
+      <input
+        id="phone-dialog-input"
+        type="tel"
+        inputmode="tel"
+        class="phone-dialog-input"
+        placeholder="0123456789"
+        autocomplete="tel"
+        aria-label="Nombor telefon WhatsApp"
+        aria-describedby="phone-dialog-title"
+      />
+      <div class="phone-dialog-actions">
+        <button
+          id="phone-dialog-batal"
+          type="button"
+          class="btn btn-batal"
+          aria-label="Batal — tutup dialog"
+        >Batal</button>
+        <button
+          id="phone-dialog-simpan"
+          type="submit"
+          class="btn btn-simpan"
+          aria-label="Simpan nombor telefon"
+        >Simpan</button>
+      </div>
+    </form>
+  </dialog>
+
   <script type="module" src="app.js"></script>
 </body>
 </html>
