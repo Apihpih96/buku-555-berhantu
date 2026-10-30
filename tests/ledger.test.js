@@ -19,6 +19,8 @@ import {
   importJSON,
   normaliseMsisdn,
   buildWhatsAppLink,
+  buildReminder,
+  formatLocalDate,
   customerTotal,
 } from '../ledger.js';
 
@@ -221,6 +223,13 @@ describe('exportJSON / importJSON', () => {
     assert.equal(obj.entries.length, 1);
   });
 
+  it('export includes phones map', () => {
+    const e = entry();
+    const json = exportJSON([e], { 'Kak Ros': '60123456789' });
+    const obj = JSON.parse(json);
+    assert.equal(obj.phones['Kak Ros'], '60123456789');
+  });
+
   it('import merges new entries, deduplicates existing', () => {
     const existing = [entry({ id: 'existing' })];
     const incoming = [
@@ -228,22 +237,37 @@ describe('exportJSON / importJSON', () => {
       entry({ id: 'new' }),           // new — should be added
     ];
     const json = JSON.stringify({ version: 1, entries: incoming });
-    const merged = importJSON(json, existing);
+    const { ledger: merged } = importJSON(json, existing);
     assert.equal(merged.length, 2);
     assert.ok(merged.some(e => e.id === 'new'));
+  });
+
+  it('import merges phones map (existing takes precedence)', () => {
+    const json = JSON.stringify({
+      version: 1,
+      entries: [],
+      phones: { 'Ali': '60111111111', 'Siti': '60222222222' },
+    });
+    const { phones: merged } = importJSON(json, [], { 'Ali': '60999999999' });
+    // Existing Ali takes precedence
+    assert.equal(merged['Ali'], '60999999999');
+    // Backup Siti is merged in
+    assert.equal(merged['Siti'], '60222222222');
   });
 
   it('import throws on bad JSON', () => {
     assert.throws(() => importJSON('not-json', []), SyntaxError);
   });
 
-  it('round-trip: export then import produces same entries', () => {
+  it('round-trip: export then import preserves entries and phones', () => {
     const ledger = [entry({ id: 'rt1' }), entry({ id: 'rt2' })];
-    const json = exportJSON(ledger);
-    const restored = importJSON(json, []);
+    const phonesMap = { 'Kak Ros': '60123456789' };
+    const json = exportJSON(ledger, phonesMap);
+    const { ledger: restored, phones: restoredPhones } = importJSON(json, []);
     assert.equal(restored.length, 2);
     assert.equal(restored[0].id, 'rt1');
     assert.equal(restored[1].id, 'rt2');
+    assert.equal(restoredPhones['Kak Ros'], '60123456789');
   });
 });
 
@@ -263,6 +287,261 @@ describe('normaliseMsisdn', () => {
   });
   it('strips dashes', () => {
     assert.equal(normaliseMsisdn('012-345-6789'), '60123456789');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Unit tests — buildWhatsAppLink
+// ---------------------------------------------------------------------------
+
+describe('buildWhatsAppLink', () => {
+  it('builds correct wa.me URL', () => {
+    const url = buildWhatsAppLink('0123456789', 'Kak Ros', 'kembung', 18, '2026-11-01');
+    assert.ok(url.startsWith('https://wa.me/60123456789?text='));
+    assert.ok(url.includes('Kak+Ros') || url.includes('Kak%20Ros'));
+  });
+
+  it('encodes message', () => {
+    const url = buildWhatsAppLink('0123456789', 'Ali', 'ayam', 25.5, null);
+    assert.ok(url.includes('wa.me'));
+    // Should be URI-encoded (spaces become %20 or +)
+    assert.ok(!url.includes(' '));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Unit tests — formatLocalDate
+// ---------------------------------------------------------------------------
+
+describe('formatLocalDate', () => {
+  it('formats a known Friday in ms', () => {
+    // 2026-11-06 is a Friday
+    const result = formatLocalDate('2026-11-06', 'ms');
+    assert.ok(result.includes('Jumaat'), `expected Jumaat in "${result}"`);
+    assert.ok(result.includes('6'), `expected day 6 in "${result}"`);
+    assert.ok(result.includes('Nov'), `expected Nov in "${result}"`);
+  });
+
+  it('formats a known Friday in en', () => {
+    const result = formatLocalDate('2026-11-06', 'en');
+    assert.ok(result.includes('Friday'), `expected Friday in "${result}"`);
+    assert.ok(result.includes('Nov'), `expected Nov in "${result}"`);
+  });
+
+  it('returns empty string for falsy input', () => {
+    assert.equal(formatLocalDate('', 'ms'), '');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Unit tests — buildReminder
+// ---------------------------------------------------------------------------
+
+describe('buildReminder', () => {
+  // Helper: today fixed to 2026-10-30 for deterministic tests
+  const TODAY = new Date(2026, 9, 30); // October 30 local
+
+  it('returns empty string when customer has no unpaid entries', () => {
+    const paid = { ...entry({ id: 'p1', customer: 'Ali', amountRM: 10 }), paid: true };
+    const url = buildReminder([paid], 'Ali', '0123456789', TODAY, 'ms');
+    assert.equal(url, '');
+  });
+
+  it('URL starts with https://wa.me/60', () => {
+    const e = entry({ id: 'r1', customer: 'Ali', amountRM: 20, dueDate: null });
+    const url = buildReminder([e], 'Ali', '0123456789', TODAY, 'ms');
+    assert.ok(url.startsWith('https://wa.me/60'), `got: ${url.slice(0, 40)}`);
+  });
+
+  it('normalises phone number in URL', () => {
+    const e = entry({ id: 'r2', customer: 'Ali', amountRM: 20, dueDate: null });
+    const url = buildReminder([e], 'Ali', '012-345-6789', TODAY, 'ms');
+    assert.ok(url.startsWith('https://wa.me/60123456789'), `got: ${url.slice(0, 50)}`);
+  });
+
+  it('does not include paid entries in message', () => {
+    const unpaid = entry({ id: 'u1', customer: 'Siti', item: 'ayam', amountRM: 15, dueDate: null });
+    const paid   = { ...entry({ id: 'p2', customer: 'Siti', item: 'sayur', amountRM: 5, dueDate: null }), paid: true };
+    const url = buildReminder([unpaid, paid], 'Siti', '0123456789', TODAY, 'ms');
+    const decoded = decodeURIComponent(url.split('?text=')[1]);
+    assert.ok(decoded.includes('ayam'), 'should include unpaid item');
+    assert.ok(!decoded.includes('sayur'), 'should NOT include paid item');
+  });
+
+  it('filters to the correct customer', () => {
+    const ali  = entry({ id: 'a1', customer: 'Ali',  item: 'ayam',   amountRM: 15, dueDate: null });
+    const siti = entry({ id: 's1', customer: 'Siti', item: 'kembung', amountRM: 20, dueDate: null });
+    const url = buildReminder([ali, siti], 'Ali', '0123456789', TODAY, 'ms');
+    const decoded = decodeURIComponent(url.split('?text=')[1]);
+    assert.ok(decoded.includes('ayam'), 'should include Ali item');
+    assert.ok(!decoded.includes('kembung'), 'should NOT include Siti item');
+  });
+
+  it('includes Malay ghost line when any entry is overdue', () => {
+    const overdue = entry({ id: 'o1', customer: 'Ros', item: 'ikan', amountRM: 10, dueDate: '2026-10-01' });
+    const url = buildReminder([overdue], 'Ros', '0123456789', TODAY, 'ms');
+    const decoded = decodeURIComponent(url.split('?text=')[1]);
+    assert.ok(decoded.includes('Hantu Buku 555'), `expected ghost line, got: ${decoded.slice(0, 80)}`);
+    assert.ok(decoded.includes('abaikan'), 'expected abaikan sign-off');
+  });
+
+  it('does NOT include ghost line when all entries are not overdue', () => {
+    const future = entry({ id: 'f1', customer: 'Ros', item: 'ikan', amountRM: 10, dueDate: '2026-12-01' });
+    const url = buildReminder([future], 'Ros', '0123456789', TODAY, 'ms');
+    const decoded = decodeURIComponent(url.split('?text=')[1]);
+    assert.ok(!decoded.includes('Hantu Buku 555'), 'should NOT have ghost for future entry');
+    assert.ok(decoded.includes('Harap'), 'expected gentle sign-off');
+  });
+
+  it('mentions hari ini for entry due today', () => {
+    const todayISO = `${TODAY.getFullYear()}-${String(TODAY.getMonth()+1).padStart(2,'0')}-${String(TODAY.getDate()).padStart(2,'0')}`;
+    const todayEntry = entry({ id: 't1', customer: 'Ros', item: 'ikan', amountRM: 10, dueDate: todayISO });
+    const url = buildReminder([todayEntry], 'Ros', '0123456789', TODAY, 'ms');
+    const decoded = decodeURIComponent(url.split('?text=')[1]);
+    assert.ok(decoded.includes('hari ini'), `expected hari ini, got: ${decoded}`);
+  });
+
+  it('builds correct English message', () => {
+    const e = entry({ id: 'en1', customer: 'Ali', item: 'chicken', amountRM: 25, dueDate: null });
+    const url = buildReminder([e], 'Ali', '0123456789', TODAY, 'en');
+    const decoded = decodeURIComponent(url.split('?text=')[1]);
+    assert.ok(decoded.includes('Hello'), 'expected English greeting');
+    assert.ok(decoded.includes('Thank you'), 'expected English sign-off');
+    assert.ok(decoded.includes('Outstanding'), 'expected English heading');
+  });
+
+  it('English ghost line when overdue', () => {
+    const overdue = entry({ id: 'eo1', customer: 'Ali', item: 'chicken', amountRM: 25, dueDate: '2026-09-01' });
+    const url = buildReminder([overdue], 'Ali', '0123456789', TODAY, 'en');
+    const decoded = decodeURIComponent(url.split('?text=')[1]);
+    assert.ok(decoded.includes('Ghost'), 'expected English ghost line');
+    assert.ok(decoded.includes('ignore'), 'expected English ignore sign-off');
+  });
+
+  it('message contains RM total for multi-entry customer', () => {
+    const e1 = entry({ id: 'm1', customer: 'Ali', item: 'ayam',  amountRM: 15, dueDate: null });
+    const e2 = entry({ id: 'm2', customer: 'Ali', item: 'ikan',  amountRM: 10, dueDate: null });
+    const url = buildReminder([e1, e2], 'Ali', '0123456789', TODAY, 'ms');
+    const decoded = decodeURIComponent(url.split('?text=')[1]);
+    // Total is 25.00
+    assert.ok(decoded.includes('25.00'), `expected total 25.00 in message: ${decoded}`);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Property-based tests — buildReminder
+// ---------------------------------------------------------------------------
+
+describe('buildReminder — PBT: message total = sum of unpaid', () => {
+  it('PBT: total in message equals customerTotal for unpaid entries', () => {
+    const arbEntry = (customer) => fc.record({
+      id:        fc.uuid(),
+      customer:  fc.constant(customer),
+      item:      fc.constantFrom('ayam', 'kembung', 'sayur'),
+      qty:       fc.option(fc.integer({ min: 1, max: 5 })),
+      amountRM:  fc.integer({ min: 0, max: 10000 }).map(n => n / 100),
+      dueDate:   fc.constant(null),
+      paid:      fc.boolean(),
+      paidAt:    fc.constant(null),
+      createdAt: fc.constant('2026-10-30T00:00:00.000Z'),
+      raw:       fc.constant(''),
+    });
+
+    fc.assert(
+      fc.property(
+        fc.array(arbEntry('Ali'), { minLength: 1, maxLength: 10 }),
+        (entries) => {
+          const unpaid = entries.filter(e => !e.paid);
+          if (unpaid.length === 0) {
+            // buildReminder returns '' for no unpaid — that's valid
+            const url = buildReminder(entries, 'Ali', '0123456789', new Date(2026, 9, 30), 'ms');
+            return url === '';
+          }
+          const url = buildReminder(entries, 'Ali', '0123456789', new Date(2026, 9, 30), 'ms');
+          const decoded = decodeURIComponent(url.split('?text=')[1] ?? '');
+          const expectedTotal = Math.round(unpaid.reduce((s, e) => s + e.amountRM, 0) * 100) / 100;
+          return decoded.includes(expectedTotal.toFixed(2));
+        }
+      ),
+      { numRuns: 150 }
+    );
+  });
+});
+
+describe('buildReminder — PBT: paid entries never appear', () => {
+  it('PBT: no paid entry item appears in reminder message', () => {
+    const ITEMS = ['ayam', 'kembung', 'sayur', 'sardin', 'udang'];
+    const arbEntry = (customer, item) => fc.record({
+      id:        fc.uuid(),
+      customer:  fc.constant(customer),
+      item:      fc.constant(item),
+      qty:       fc.constant(null),
+      amountRM:  fc.integer({ min: 100, max: 5000 }).map(n => n / 100),
+      dueDate:   fc.constant(null),
+      paid:      fc.boolean(),
+      paidAt:    fc.constant(null),
+      createdAt: fc.constant('2026-10-30T00:00:00.000Z'),
+      raw:       fc.constant(''),
+    });
+
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.constantFrom(...ITEMS).chain(item => arbEntry('Ali', item)),
+          { minLength: 1, maxLength: 8 }
+        ),
+        (entries) => {
+          const unpaid = entries.filter(e => !e.paid);
+          if (unpaid.length === 0) return true;
+
+          const url = buildReminder(entries, 'Ali', '0123456789', new Date(2026, 9, 30), 'ms');
+          const decoded = decodeURIComponent(url.split('?text=')[1] ?? '');
+
+          // No paid-only item should appear unless it's also in an unpaid entry
+          const unpaidItems = new Set(unpaid.map(e => e.item));
+          const paidOnlyItems = entries
+            .filter(e => e.paid)
+            .map(e => e.item)
+            .filter(item => !unpaidItems.has(item));
+
+          return paidOnlyItems.every(item => !decoded.includes(item));
+        }
+      ),
+      { numRuns: 150 }
+    );
+  });
+});
+
+describe('buildReminder — PBT: URL always starts https://wa.me/60', () => {
+  it('PBT: URL prefix is correct for any non-empty unpaid ledger', () => {
+    const arbEntry = fc.record({
+      id:        fc.uuid(),
+      customer:  fc.constant('Ali'),
+      item:      fc.constant('ayam'),
+      qty:       fc.constant(null),
+      amountRM:  fc.integer({ min: 1, max: 5000 }).map(n => n / 100),
+      dueDate:   fc.constant(null),
+      paid:      fc.constant(false),
+      paidAt:    fc.constant(null),
+      createdAt: fc.constant('2026-10-30T00:00:00.000Z'),
+      raw:       fc.constant(''),
+    });
+
+    const arbPhone = fc.constantFrom(
+      '0123456789', '60123456789', '+60123456789', '011-1234567', '0197654321'
+    );
+
+    fc.assert(
+      fc.property(
+        fc.array(arbEntry, { minLength: 1, maxLength: 5 }),
+        arbPhone,
+        (entries, phone) => {
+          const url = buildReminder(entries, 'Ali', phone, new Date(2026, 9, 30), 'ms');
+          return url.startsWith('https://wa.me/60');
+        }
+      ),
+      { numRuns: 200 }
+    );
   });
 });
 
@@ -427,8 +706,8 @@ describe('ledger — PBT: export/import round-trip', () => {
       fc.property(
         fc.array(arbEntry, { minLength: 0, maxLength: 10 }),
         (ledger) => {
-          const json     = exportJSON(ledger);
-          const restored = importJSON(json, []);
+          const json = exportJSON(ledger);
+          const { ledger: restored } = importJSON(json, []);
           if (restored.length !== ledger.length) return false;
           return ledger.every((e, i) => e.id === restored[i].id);
         }
