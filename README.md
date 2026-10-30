@@ -26,7 +26,7 @@ Malaysian market traders have tracked customer credit ("hutang") for decades usi
 - It **parses** customer, item, amount (RM) and due day
 - It shows **who owes what**, total outstanding, and who is overdue
 - For overdue customers, a polite **ghost reminder** message is prepared and
-  opened in **WhatsApp** via a `wa.me` link. The trader always presses Send —
+  opened in **WhatsApp** via a WhatsApp click-to-chat link. The trader always presses Send —
   nothing is sent automatically.
 - Marking an entry paid **exorcises** the ghost 👻✨
 
@@ -42,7 +42,7 @@ big tap targets, Malay-first UI, works offline, no login, no server.
 | Voice input | Web Speech API, `ms-MY` locale, graceful fallback to text |
 | Malay parser | Handles honorifics, Malay numbers, RM amounts, relative/named days |
 | Offline | Pure static site — works with no internet after first load |
-| WhatsApp reminders | `wa.me` deep links, Malaysian numbers normalised to `60XXXXXXXXX` |
+| WhatsApp reminders | WhatsApp click-to-chat links (api.whatsapp.com/send, keeps emoji intact), Malaysian numbers normalised to `60XXXXXXXXX` |
 | Backup | JSON export / import |
 | Language | Bahasa Melayu (default) / English toggle |
 | Halloween theme | Aged paper, Buku 555 red/blue, floating ghost animation |

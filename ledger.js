@@ -260,7 +260,7 @@ export function buildWhatsAppLink(msisdn, customer, item, amountRM, dueDate) {
     `${item} — RM${round2(amountRM).toFixed(2)}\n` +
     `Tarikh bayar: ${due}\n` +
     `Terima kasih 🙏`;
-  return `https://wa.me/${normalised}?text=${encodeURIComponent(msg)}`;
+  return `https://api.whatsapp.com/send?phone=${normalised}&text=${encodeURIComponent(msg)}`;
 }
 
 /**
@@ -363,7 +363,7 @@ export function buildReminder(entries, customer, msisdn, today = new Date(), lan
 
   const text = lines.join('\n');
   const normalised = normaliseMsisdn(msisdn);
-  return `https://wa.me/${normalised}?text=${encodeURIComponent(text)}`;
+  return `https://api.whatsapp.com/send?phone=${normalised}&text=${encodeURIComponent(text)}`;
 }
 
 // ---------------------------------------------------------------------------
