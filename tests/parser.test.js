@@ -1,0 +1,217 @@
+/**
+ * @file tests/parser.test.js
+ * Unit tests and property-based tests for parser.js.
+ * Run with: node --test tests/parser.test.js
+ */
+
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import fc from 'fast-check';
+import { parse, formatRM, round2 } from '../parser.js';
+
+// ---------------------------------------------------------------------------
+// Helper — fixed "today" for deterministic date assertions
+// ---------------------------------------------------------------------------
+// Use a Friday so "bayar Jumaat" == today+7 and "esok" is predictable.
+// 2026-10-30 is a Friday.
+const TODAY = new Date('2026-10-30T00:00:00.000Z');
+
+// ---------------------------------------------------------------------------
+// Unit tests — example sentences from design.md
+// ---------------------------------------------------------------------------
+
+describe('parser — example sentences', () => {
+
+  it('Kak Ros ambil 2 kilo kembung RM18, bayar Jumaat', () => {
+    const r = parse('Kak Ros ambil 2 kilo kembung RM18, bayar Jumaat', TODAY);
+    assert.equal(r.customer, 'Kak Ros');
+    assert.equal(r.item, 'kembung');
+    assert.equal(r.qty, 2);
+    assert.equal(r.amountRM, 18.00);
+    // Jumaat (Friday) — 2026-10-30 is already a Friday, so next Friday is +7
+    assert.equal(r.dueDate, '2026-11-06');
+  });
+
+  it('Encik Ali hutang ayam RM25.50', () => {
+    const r = parse('Encik Ali hutang ayam RM25.50', TODAY);
+    assert.equal(r.customer, 'Encik Ali');
+    assert.equal(r.item, 'ayam');
+    assert.equal(r.qty, null);
+    assert.equal(r.amountRM, 25.50);
+    assert.equal(r.dueDate, null);
+  });
+
+  it('Mak Cik Timah beli tiga tin sardin dua ringgit lima puluh sen', () => {
+    const r = parse('Mak Cik Timah beli tiga tin sardin dua ringgit lima puluh sen', TODAY);
+    assert.equal(r.customer, 'Mak Cik Timah');
+    assert.equal(r.item, 'sardin');
+    assert.equal(r.qty, 3);
+    assert.equal(r.amountRM, 2.50);
+    assert.equal(r.dueDate, null);
+  });
+
+  it('Abang Zul ambil ikan pari seringgit bayar esok', () => {
+    const r = parse('Abang Zul ambil ikan pari seringgit bayar esok', TODAY);
+    assert.equal(r.customer, 'Abang Zul');
+    // ikan pari or ikan are both acceptable — check at least "ikan" present
+    assert.ok(r.item && r.item.includes('ikan'), `item should include 'ikan', got: ${r.item}`);
+    assert.equal(r.amountRM, 1.00);
+    assert.equal(r.dueDate, '2026-10-31'); // esok = tomorrow
+  });
+
+  it('Puan Hasnah RM50 bayar hujung bulan', () => {
+    const r = parse('Puan Hasnah RM50 bayar hujung bulan', TODAY);
+    assert.equal(r.customer, 'Puan Hasnah');
+    assert.equal(r.amountRM, 50.00);
+    assert.equal(r.dueDate, '2026-10-31'); // last day of October
+  });
+
+  it('simple: Ali RM10', () => {
+    const r = parse('Ali RM10', TODAY);
+    assert.equal(r.customer, 'Ali');
+    assert.equal(r.amountRM, 10.00);
+    assert.equal(r.dueDate, null);
+  });
+
+  it('handles decimal RM: RM12.99', () => {
+    const r = parse('Cik Sara RM12.99', TODAY);
+    assert.equal(r.amountRM, 12.99);
+  });
+
+  it('handles minggu depan', () => {
+    const r = parse('Pak Cik Hamid beli sayur RM8 bayar minggu depan', TODAY);
+    assert.equal(r.dueDate, '2026-11-06'); // +7 days
+  });
+
+  it('handles lusa', () => {
+    const r = parse('Melor RM5 bayar lusa', TODAY);
+    assert.equal(r.dueDate, '2026-11-01'); // +2 days
+  });
+
+  it('handles named day Isnin', () => {
+    const r = parse('Hassan RM20 bayar Isnin', TODAY);
+    // 2026-10-30 is Fri → next Isnin is 2026-11-02
+    assert.equal(r.dueDate, '2026-11-02');
+  });
+
+  it('null input returns all nulls', () => {
+    const r = parse(null);
+    assert.equal(r.customer, null);
+    assert.equal(r.amountRM, null);
+  });
+
+  it('empty string returns all nulls', () => {
+    const r = parse('');
+    assert.equal(r.customer, null);
+    assert.equal(r.amountRM, null);
+  });
+
+  it('ringgit keyword: lima ringgit', () => {
+    const r = parse('Dila beli limau lima ringgit', TODAY);
+    assert.equal(r.amountRM, 5.00);
+  });
+
+  it('RM with no spaces: RM5.50', () => {
+    const r = parse('Rozi RM5.50', TODAY);
+    assert.equal(r.amountRM, 5.50);
+  });
+
+});
+
+// ---------------------------------------------------------------------------
+// Unit tests — formatRM
+// ---------------------------------------------------------------------------
+
+describe('formatRM', () => {
+  it('whole number', () => assert.equal(formatRM(18), 'RM18.00'));
+  it('decimal',      () => assert.equal(formatRM(25.5), 'RM25.50'));
+  it('zero',         () => assert.equal(formatRM(0), 'RM0.00'));
+  it('two decimals', () => assert.equal(formatRM(12.99), 'RM12.99'));
+});
+
+// ---------------------------------------------------------------------------
+// Unit tests — round2
+// ---------------------------------------------------------------------------
+
+describe('round2', () => {
+  it('2.505 rounds to 2.51', () => assert.equal(round2(2.505), 2.51));
+  it('1.004 rounds to 1.00', () => assert.equal(round2(1.004), 1.00));
+  it('0 stays 0',            () => assert.equal(round2(0), 0));
+  it('negative rounds',      () => assert.equal(round2(-1.005), -1.0));
+});
+
+// ---------------------------------------------------------------------------
+// Property-based tests (fast-check)
+// ---------------------------------------------------------------------------
+
+describe('parser — property: amountRM always non-negative for RM literal inputs', () => {
+  it('PBT: RM literal always non-negative', () => {
+    fc.assert(
+      fc.property(
+        fc.float({ min: 0, max: 10000, noNaN: true }),
+        (amount) => {
+          const cents = Math.round((amount % 1) * 100);
+          const whole = Math.floor(amount);
+          const input = `Pelanggan RM${whole}.${String(cents).padStart(2, '0')}`;
+          const r = parse(input, TODAY);
+          return r.amountRM === null || r.amountRM >= 0;
+        }
+      ),
+      { numRuns: 200 }
+    );
+  });
+});
+
+describe('parser — property: customer is non-empty string when not null', () => {
+  it('PBT: customer non-empty', () => {
+    const names = fc.constantFrom(
+      'Ali', 'Kak Ros', 'Encik Ahmad', 'Puan Siti', 'Mak Cik Timah'
+    );
+    fc.assert(
+      fc.property(names, (name) => {
+        const r = parse(`${name} RM10`, TODAY);
+        if (r.customer !== null) {
+          return typeof r.customer === 'string' && r.customer.trim().length > 0;
+        }
+        return true;
+      }),
+      { numRuns: 100 }
+    );
+  });
+});
+
+describe('parser — property: RM literal parsed precisely', () => {
+  it('PBT: RMx.yy parses to x + yy/100', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 9999 }),
+        fc.integer({ min: 0, max: 99 }),
+        (whole, cents) => {
+          const str = `Pelanggan RM${whole}.${String(cents).padStart(2, '0')}`;
+          const r = parse(str, TODAY);
+          const expected = round2(whole + cents / 100);
+          return r.amountRM === expected;
+        }
+      ),
+      { numRuns: 300 }
+    );
+  });
+});
+
+describe('formatRM — property: idempotent', () => {
+  it('PBT: formatRM(round2(n)) === formatRM(round2(round2(n)))', () => {
+    fc.assert(
+      fc.property(
+        fc.float({ min: 0, max: 100000, noNaN: true }),
+        (n) => {
+          const once = formatRM(round2(n));
+          // parse back the number from the formatted string
+          const back = parseFloat(once.replace('RM', ''));
+          const twice = formatRM(round2(back));
+          return once === twice;
+        }
+      ),
+      { numRuns: 500 }
+    );
+  });
+});
