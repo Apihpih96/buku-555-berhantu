@@ -57,7 +57,7 @@ A phone-first progressive web app for Malaysian market traders to track customer
 
 ### FR-4: WhatsApp Reminder
 
-**FR-4.1** WHEN the trader taps "Hantar Peringatan" on any unpaid entry (overdue or not), the system SHALL construct a single reminder message covering ALL of that customer's unpaid entries and open `https://wa.me/<msisdn>?text=<encoded>` in a new tab.
+**FR-4.1** WHEN the trader taps "Hantar Peringatan" on any unpaid entry (overdue or not), the system SHALL construct a single reminder message covering ALL of that customer's unpaid entries and open `https://api.whatsapp.com/send?phone=<msisdn>&text=<encoded>` in a new tab.
 
 **FR-4.2** WHEN constructing the WhatsApp link, the system SHALL normalise Malaysian phone numbers to the format `60XXXXXXXXX` (strip leading `0`, prepend `60`).
 
@@ -176,7 +176,7 @@ A phone-first progressive web app for Malaysian market traders to track customer
 | AC-7 | All property-based tests pass (see design.md §Correctness Properties) |
 | AC-8 | `buildReminder()` message total equals sum of the customer's unpaid amounts |
 | AC-9 | Paid entries never appear in the reminder message |
-| AC-10 | `buildReminder()` URL starts with `https://wa.me/60` |
+| AC-10 | `buildReminder()` URL starts with `https://api.whatsapp.com/send?phone=60` |
 | AC-11 | Phone-number map is preserved after export → import round-trip |
 | AC-12 | "Hantar Peringatan" button is shown on every unpaid entry |
 | AC-13 | In-app phone dialog appears when no number is saved; saved number is reused without dialog |

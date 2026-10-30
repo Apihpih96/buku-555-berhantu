@@ -181,7 +181,7 @@ buildReminder(
   customer: string,
   today:    Date,
   lang:     'ms' | 'en'
-): string                    // full https://wa.me/60XXXXXXXXX?text=... URL
+): string                    // full https://api.whatsapp.com/send?phone=60XXXXXXXXX?text=... URL
 ```
 The phone number must be provided separately by the caller (looked up from the phones map in `app.js`) and passed to `normaliseMsisdn` before building the URL. `buildReminder` itself builds only the **message text** and wraps it into the URL using the normalised number.
 
@@ -274,7 +274,7 @@ Thank you 🙏
 ### Correctness Properties for `buildReminder` (PBT)
 10. **Message total = sum of unpaid:** The RM total in the message equals `customerTotal(entries, customer)`.
 11. **Paid entries excluded:** No paid entry's item appears in the message.
-12. **URL prefix:** The returned URL starts with `https://wa.me/60`.
+12. **URL prefix:** The returned URL starts with `https://api.whatsapp.com/send?phone=60`.
 13. **Empty = empty URL:** If the customer has no unpaid entries, `buildReminder` returns `''` (or throws — callers must guard).
 
 ---

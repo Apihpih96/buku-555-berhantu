@@ -47,7 +47,7 @@ Numbered checklist of implementation tasks. Each task references the requirement
 - [x] T-18 Add phone-number dialog `<dialog id="phone-dialog">` to `index.html` with `<input inputmode="tel">`, Simpan and Batal buttons, ≥48px tap targets, ARIA attributes (FR-4.4, NFR-1, NFR-4)
 - [x] T-19 Load/save `phones` map from localStorage in `app.js` (`loadState` / `saveState`); wire "Hantar Peringatan" button on ALL unpaid entries (not just overdue); show "Tukar nombor" link when number already saved (FR-4.2, FR-4.4, FR-4.5, FR-4.6, FR-4.8)
 - [x] T-20 Replace `window.prompt` phone-number flow in `app.js` with the in-app `<dialog>` — open dialog when number unknown, call `buildReminder` + `window.open` when confirmed or number already known (FR-4.4, FR-4.5)
-- [x] T-21 Write `buildReminder` unit tests and PBT properties in `tests/ledger.test.js`: message total = sum of unpaid, paid entries excluded, URL starts `https://wa.me/60`, tone variants (AC-8, AC-9, AC-10, Design §Correctness Properties 10–13)
+- [x] T-21 Write `buildReminder` unit tests and PBT properties in `tests/ledger.test.js`: message total = sum of unpaid, paid entries excluded, URL starts `https://api.whatsapp.com/send?phone=60`, tone variants (AC-8, AC-9, AC-10, Design §Correctness Properties 10–13)
 - [x] T-22 Run `npm test`; fix failures until all pass
 - [x] T-23 Add `demoEntries(today)` sample ledger, 👻 Cuba Demo button and `?demo=1` deep link for judges; test it always yields overdue, due-today, upcoming and paid entries
 
@@ -76,3 +76,4 @@ Numbered checklist of implementation tasks. Each task references the requirement
 ## Phase 12 — Final Verification
 
 - [x] T-27 Run `npm test` until all tests pass; mark T-24..T-27 as complete
+- [x] T-28 Bug: emoji in reminders arrived as "�" because the wa.me redirect re-encodes 4-byte characters. Switch to https://api.whatsapp.com/send?phone=…&text=… and update URL tests/properties
