@@ -1278,7 +1278,9 @@ function init() {
  */
 function onLoadDemo(ask) {
   if (ask && ledger.length > 0 && !confirm(T('confirmDemo'))) return;
-  ledger = demoEntries(new Date());
+  const demo = demoEntries(new Date());
+  ledger   = demo.entries;
+  payments = demo.payments;
   saveState();
   renderAll();
   showFeedback(T('toastDemo'));

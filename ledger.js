@@ -836,19 +836,42 @@ export function buildStatement(entries, payments, customer, msisdn, today = new 
  * @param {Date} today
  * @returns {LedgerEntry[]}
  */
+/**
+ * Sample warung ledger for judges and first-time users, dated relative to
+ * `today` so it always shows one overdue ghost, one due today, one upcoming,
+ * one paid entry, and a pre-loaded partial payment to demonstrate bayaran-ansuran.
+ *
+ * Returns `{ entries, payments }` so the caller can populate both stores.
+ *
+ * @param {Date} today
+ * @returns {{ entries: LedgerEntry[], payments: PaymentRecord[] }}
+ */
 export function demoEntries(today = new Date()) {
   const shift = (days) => {
     const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + days);
     return localISO(d);
   };
+
+  // Fixed timestamps a few days before today so demo always feels recent
+  const createdYesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1).toISOString();
+  const created3ago      = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 3).toISOString();
+  const created10ago     = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 10).toISOString();
+
   const rows = [
-    { customer: 'Kak Ros', item: 'beras 5kg', qty: 1, amountRM: 18.5, dueDate: shift(-3), raw: 'Kak Ros hutang beras 5kg RM18.50' },
-    { customer: 'Kak Ros', item: 'gula', qty: 2, amountRM: 6, dueDate: shift(4), raw: 'Kak Ros 2kilo gula RM6 bayar minggu depan' },
-    { customer: 'Pak Mat', item: 'rokok', qty: 1, amountRM: 17, dueDate: shift(-10), raw: 'Pak Mat rokok RM17' },
-    { customer: 'Abang Jeff', item: 'minyak masak', qty: 1, amountRM: 9.9, dueDate: shift(0), raw: 'Abang Jeff minyak masak RM9.90 bayar hari ini' },
-    { customer: 'Mak Cik Timah', item: 'telur sepapan', qty: 1, amountRM: 13, dueDate: shift(7), raw: 'Mak Cik Timah telur sepapan RM13' },
+    { customer: 'Kak Ros',      item: 'beras 5kg',    qty: 1, amountRM: 18.5,  dueDate: shift(-3), raw: 'Kak Ros hutang beras 5kg RM18.50',             createdAt: created3ago },
+    { customer: 'Kak Ros',      item: 'gula',          qty: 2, amountRM: 6,     dueDate: shift(4),  raw: 'Kak Ros 2kilo gula RM6 bayar minggu depan',    createdAt: createdYesterday },
+    { customer: 'Pak Mat',      item: 'rokok',         qty: 1, amountRM: 17,    dueDate: shift(-10),raw: 'Pak Mat rokok RM17',                            createdAt: created10ago },
+    { customer: 'Abang Jeff',   item: 'minyak masak',  qty: 1, amountRM: 9.9,   dueDate: shift(0),  raw: 'Abang Jeff minyak masak RM9.90 bayar hari ini', createdAt: createdYesterday },
+    { customer: 'Mak Cik Timah',item: 'telur sepapan', qty: 1, amountRM: 13,    dueDate: shift(7),  raw: 'Mak Cik Timah telur sepapan RM13',              createdAt: createdYesterday },
   ];
-  const entries = rows.map((r) => createEntry(r));
-  const paid = createEntry({ customer: 'Adik Hafiz', item: 'roti', qty: 1, amountRM: 3.2, dueDate: shift(-1), raw: 'Adik Hafiz roti RM3.20' });
-  return [...entries, { ...paid, paid: true }];
+  const baseEntries = rows.map((r) => createEntry(r));
+  const paidEntry   = createEntry({ customer: 'Adik Hafiz', item: 'roti', qty: 1, amountRM: 3.2, dueDate: shift(-1), raw: 'Adik Hafiz roti RM3.20', createdAt: createdYesterday });
+  const allEntries  = [...baseEntries, { ...paidEntry, paid: true, paidAt: createdYesterday }];
+
+  // Apply a demo partial payment of RM10 for Kak Ros (oldest entry first — FIFO)
+  // This splits the beras 5kg entry: RM10 paid, RM8.50 still outstanding.
+  const payRaw = 'Kak Ros bayar RM10 (demo)';
+  const { ledger: entries, payments } = applyPayment(allEntries, [], 'Kak Ros', 10, payRaw);
+
+  return { entries, payments };
 }

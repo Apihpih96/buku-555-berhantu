@@ -724,7 +724,7 @@ describe('ledger — PBT: export/import round-trip', () => {
 it('demoEntries: always has overdue, due-today, upcoming and paid entries', async () => {
   const { demoEntries, overdueEntries } = await import('../ledger.js');
   const today = new Date(2026, 9, 31);
-  const d = demoEntries(today);
+  const { entries: d } = demoEntries(today);
   assert.ok(d.some(e => e.paid));
   assert.ok(d.some(e => !e.paid && e.dueDate === '2026-10-31'));
   assert.ok(d.some(e => !e.paid && e.dueDate > '2026-10-31'));
