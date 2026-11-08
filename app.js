@@ -536,6 +536,10 @@ function onAddEntry() {
       showFeedback(T('errParseCustomer'), 'error');
       return;
     }
+    if (parsed.amountRM === null && !parsed.settleAll) {
+      showFeedback(T('errParseAmount'), 'error');
+      return;
+    }
     onApplyPayment(parsed.customer, parsed.amountRM, raw);
     input.value = '';
     return;

@@ -375,3 +375,29 @@ describe('parser — PBT: payment customer non-empty when detected', () => {
     );
   });
 });
+
+// Regression tests (Hark review fixes, 2026-11-09)
+describe('parser — payment edge cases (review fixes)', () => {
+  const D = new Date('2026-11-09T04:00:00Z');
+  it('"bagi" after a debt verb stays a debt', () => {
+    const r = parse('Kak Ros ambil roti bagi anak RM5', D);
+    assert.notEqual(r.type, 'payment');
+    assert.equal(r.amountRM, 5);
+  });
+  it('"dah bayar" with no amount is not settle-all', () => {
+    const r = parse('Kak Ros dah bayar', D);
+    assert.equal(r.type, 'payment');
+    assert.equal(r.settleAll, false);
+  });
+  it('langsai is settle-all', () => {
+    assert.equal(parse('Pak Ali langsai', D).settleAll, true);
+  });
+  it('filler words do not join the customer name', () => {
+    assert.equal(parse('Kak Ros bayar RM10 dulu', D).customer, 'Kak Ros');
+    assert.equal(parse('Kak Ros bayar dulu RM10', D).customer, 'Kak Ros');
+  });
+  it('"rm 5" with a space is read as RM5', () => {
+    assert.equal(parse('kak ros dah bayar rm 5', D).amountRM, 5);
+    assert.equal(parse('Kak Ros ambil gula rm 5', D).amountRM, 5);
+  });
+});

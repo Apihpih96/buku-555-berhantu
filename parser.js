@@ -271,6 +271,12 @@ const PAYMENT_TRIGGERS_SINGLE_UNCONDITIONAL = ['bagi', 'settle', 'langsai'];
  * Settle-all trigger phrases (amountRM becomes null).
  * @type {Set<string>}
  */
+/** Verbs that mark a sentence as a new debt, never a payment. */
+const DEBT_VERBS = ['ambil', 'beli', 'hutang', 'pinjam'];
+
+/** Time/filler words that end a customer name in a payment sentence. */
+const PAYMENT_FILLERS = ['dulu', 'tadi', 'semalam', 'je', 'ja', 'dah', 'sudah', 'semua', 'hari', 'pagi', 'petang', 'malam', 'kat', 'untuk', 'baru'];
+
 const SETTLE_ALL_TRIGGERS = new Set(['langsai', 'settle semua', 'langsai semua', 'dah langsai', 'dah settle']);
 
 /**
@@ -287,6 +293,10 @@ const SETTLE_ALL_TRIGGERS = new Set(['langsai', 'settle semua', 'langsai semua',
  */
 function isPaymentSentence(tokens) {
   const joined = tokens.join(' ');
+
+  // A debt verb ("Kak Ros ambil roti bagi anak RM5") means this is a new
+  // debt, even if a word like 'bagi' or 'bayar' appears later.
+  if (tokens.some(t => DEBT_VERBS.includes(t))) return false;
 
   // Multi-word triggers always win
   for (const phrase of PAYMENT_TRIGGERS_MULTI) {
@@ -387,6 +397,7 @@ function findPaymentTrigger(tokens) {
 export function parsePayment(input, today) {
   const normalised = input
     .toLowerCase()
+    .replace(/\brm\s+(?=\d)/g, 'rm')
     .replace(/(rm\s*\d+)[.,](\d{1,2})/gi, '$1.$2')
     .replace(/[,،]/g, ' ')
     .replace(/(\D)\.|\.(\D)/g, '$1 $2')
@@ -447,6 +458,7 @@ export function parsePayment(input, today) {
   while (pos < remaining.length) {
     const word = remaining[pos].t;
     if (VERBS.includes(word)) { pos++; break; }
+    if (PAYMENT_FILLERS.includes(word)) break;
     if (MALAY_UNITS[word] !== undefined) break;
     const twoWord = word + ' ' + (remaining[pos + 1]?.t ?? '');
     if (MALAY_TENS[twoWord] !== undefined) break;
@@ -466,6 +478,9 @@ export function parsePayment(input, today) {
     type: 'payment',
     customer: customer || null,
     amountRM,
+    // true only for langsai / settle semua; a plain "dah bayar" with no
+    // amount must NOT clear the whole debt
+    settleAll: isSettleAll && amountRM === null,
   };
 }
 
@@ -498,6 +513,7 @@ export function parse(input, today = new Date()) {
   // Quick normalise for trigger detection (same pipeline as full normalise below)
   const quickNorm = input
     .toLowerCase()
+    .replace(/\brm\s+(?=\d)/g, 'rm')
     .replace(/(rm\s*\d+)[.,](\d{1,2})/gi, '$1.$2')
     .replace(/[,،]/g, ' ')
     .replace(/\s+/g, ' ')
@@ -511,6 +527,7 @@ export function parse(input, today = new Date()) {
   // Normalise: lowercase, preserve decimals in RM amounts, strip other punctuation
   const normalised = input
     .toLowerCase()
+    .replace(/\brm\s+(?=\d)/g, 'rm')
     // Protect RM decimals: rm18.50 → rm18_50 (temp), restore after stripping
     .replace(/(rm\s*\d+)[.,](\d{1,2})/gi, '$1.$2')
     // Strip commas/Arabic comma/standalone periods (not already part of rm decimal)
