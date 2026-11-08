@@ -69,3 +69,7 @@ monthly credits on that login before fixing them, so these fixes were made by ha
 - [x] Undo bar disappeared after closing the customer page
 - [x] Loading demo data kept old phone numbers and could not be undone
 - [x] Service worker cache version bumped (v5 -> v6) so returning visitors get the new app
+- [x] "Kak Ros ambil roti bagi anak RM5" was read as a payment (debt verbs now win)
+- [x] "Kak Ros dah bayar" with no amount cleared the whole debt (now asks for the amount)
+- [x] "bayar RM10 dulu" made the customer "Kak Ros Dulu" (filler words end the name)
+- [x] "rm 5" with a space was not read as an amount
