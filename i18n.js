@@ -78,6 +78,15 @@ const STRINGS = {
   ariaPhoneSimpan:  { ms: 'Simpan nombor telefon',          en: 'Save phone number' },
   ariaPhoneBatal:   { ms: 'Batal — tutup dialog',           en: 'Cancel — close dialog' },
 
+  // Partial payments
+  successPayment:      { ms: 'Bayaran {amount} dicatat untuk {customer}', en: 'Payment {amount} recorded for {customer}' },
+  errOverpayment:      { ms: 'Lebih bayar! Baki sebenar: {balance}',      en: 'Overpayment! Actual balance: {balance}' },
+  errNoDebt:           { ms: 'Tiada hutang untuk pelanggan ini.',           en: 'No outstanding debt for this customer.' },
+  labelPaymentHistory: { ms: 'Sejarah bayaran',                            en: 'Payment history' },
+  labelBalance:        { ms: 'Baki',                                       en: 'Balance' },
+  labelSettleAll:      { ms: 'Langsai semua',                              en: 'Settle all' },
+  ariaPaymentHistory:  { ms: 'Sejarah bayaran pelanggan',                  en: 'Customer payment history' },
+
   // Top debtors card
   topDebtorsTitle:        { ms: 'Siapa paling lama hutang? 👻', en: 'Who has owed longest? 👻' },
   topDebtorsDaysOverdue:  { ms: 'tertunggak',                   en: 'days overdue' },

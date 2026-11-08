@@ -23,6 +23,9 @@ import {
   formatLocalDate,
   customerTotal,
   topDebtors,
+  applyPayment,
+  migrateStorage,
+  customerPayments,
 } from '../ledger.js';
 
 // ---------------------------------------------------------------------------
@@ -972,5 +975,466 @@ describe('buildReminder — emoji survive URL encoding', () => {
     const url = buildReminder(e, 'Kak Ros', '0123456789', new Date(2026, 9, 31), 'ms');
     assert.ok(url.includes('%F0%9F%91%BB'));
     assert.ok(!url.includes('%EF%BF%BD'));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Unit tests — migrateStorage (FR-PA-5)
+// ---------------------------------------------------------------------------
+
+describe('migrateStorage', () => {
+  it('adds payments: [] when missing', () => {
+    const data = { version: 1, entries: [], phones: {} };
+    const result = migrateStorage(data);
+    assert.deepEqual(result.payments, []);
+  });
+
+  it('preserves existing payments array', () => {
+    const p = { id: 'p1', customer: 'Ali', amountRM: 10, paidAt: '2026-10-01T00:00:00Z', raw: '' };
+    const data = { version: 1, entries: [], phones: {}, payments: [p] };
+    const result = migrateStorage(data);
+    assert.equal(result.payments.length, 1);
+    assert.equal(result.payments[0].id, 'p1');
+  });
+
+  it('handles null/undefined input gracefully', () => {
+    const result = migrateStorage(null);
+    assert.deepEqual(result.entries, []);
+    assert.deepEqual(result.payments, []);
+    assert.deepEqual(result.phones, {});
+    assert.equal(result.lang, 'ms');
+  });
+
+  it('preserves entries array', () => {
+    const e = entry({ id: 'e1' });
+    const data = { entries: [e], payments: [], phones: {}, lang: 'en' };
+    const result = migrateStorage(data);
+    assert.equal(result.entries.length, 1);
+    assert.equal(result.lang, 'en');
+  });
+
+  it('coerces missing payments to []', () => {
+    const result = migrateStorage({ entries: [], phones: {} });
+    assert.deepEqual(result.payments, []);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Unit tests — customerPayments (FR-PA-3)
+// ---------------------------------------------------------------------------
+
+describe('customerPayments', () => {
+  const makePayment = (id, customer, amountRM, paidAt) => ({ id, customer, amountRM, paidAt, raw: '' });
+
+  it('returns empty array when no payments for customer', () => {
+    const p = makePayment('p1', 'Siti', 10, '2026-10-30T00:00:00Z');
+    assert.deepEqual(customerPayments([p], 'Ali'), []);
+  });
+
+  it('returns only payments for the specified customer', () => {
+    const p1 = makePayment('p1', 'Ali', 10, '2026-10-30T00:00:00Z');
+    const p2 = makePayment('p2', 'Siti', 20, '2026-10-29T00:00:00Z');
+    const result = customerPayments([p1, p2], 'Ali');
+    assert.equal(result.length, 1);
+    assert.equal(result[0].id, 'p1');
+  });
+
+  it('sorts by paidAt descending (newest first)', () => {
+    const p1 = makePayment('p1', 'Ali', 10, '2026-10-28T00:00:00Z');
+    const p2 = makePayment('p2', 'Ali', 5, '2026-10-30T00:00:00Z');
+    const p3 = makePayment('p3', 'Ali', 8, '2026-10-29T00:00:00Z');
+    const result = customerPayments([p1, p2, p3], 'Ali');
+    assert.equal(result[0].id, 'p2');
+    assert.equal(result[1].id, 'p3');
+    assert.equal(result[2].id, 'p1');
+  });
+
+  it('does not mutate the input array', () => {
+    const p1 = makePayment('p1', 'Ali', 10, '2026-10-28T00:00:00Z');
+    const p2 = makePayment('p2', 'Ali', 5, '2026-10-30T00:00:00Z');
+    const arr = [p1, p2];
+    customerPayments(arr, 'Ali');
+    assert.equal(arr[0].id, 'p1'); // original order preserved
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Unit tests — applyPayment (FR-PA-2, AC-PA-4 through AC-PA-7)
+// ---------------------------------------------------------------------------
+
+describe('applyPayment', () => {
+  const createdAt = (n) => `2026-10-${String(n).padStart(2,'0')}T00:00:00.000Z`;
+
+  it('AC-PA-4: partial payment splits one entry into paid + unpaid remainder', () => {
+    const e = entry({ id: 'e1', customer: 'Kak Ros', amountRM: 18, createdAt: createdAt(1) });
+    const { ledger: l2, payments: p2, warning } = applyPayment([e], [], 'Kak Ros', 10, 'bayar RM10');
+    assert.equal(warning, null);
+    // There should be 2 entries: original updated to 8, plus a paid stub of 10
+    const unpaid = l2.filter(x => !x.paid && x.customer === 'Kak Ros');
+    const paid = l2.filter(x => x.paid && x.customer === 'Kak Ros');
+    assert.equal(unpaid.length, 1);
+    assert.equal(unpaid[0].amountRM, 8.00);
+    assert.equal(paid.length, 1);
+    assert.equal(paid[0].amountRM, 10.00);
+    // Payment record created
+    assert.equal(p2.length, 1);
+    assert.equal(p2[0].amountRM, 10.00);
+    assert.equal(p2[0].customer, 'Kak Ros');
+  });
+
+  it('AC-PA-5: payment covering two entries marks first paid, splits second', () => {
+    const e1 = entry({ id: 'e1', customer: 'Ali', amountRM: 10, createdAt: createdAt(1) });
+    const e2 = entry({ id: 'e2', customer: 'Ali', amountRM: 15, createdAt: createdAt(2) });
+    const { ledger: l2, warning } = applyPayment([e1, e2], [], 'Ali', 20, 'bayar RM20');
+    assert.equal(warning, null);
+    const unpaid = l2.filter(x => !x.paid && x.customer === 'Ali');
+    const paid = l2.filter(x => x.paid && x.customer === 'Ali');
+    assert.equal(unpaid.length, 1);
+    assert.equal(unpaid[0].amountRM, 5.00); // 15 - (20-10) = 5
+    assert.equal(paid.length, 2); // e1 fully paid + paid stub for 10 out of 15
+  });
+
+  it('AC-PA-6: overpayment is rejected with warning', () => {
+    const e = entry({ id: 'e1', customer: 'Ali', amountRM: 18, createdAt: createdAt(1) });
+    const { ledger: l2, payments: p2, warning } = applyPayment([e], [], 'Ali', 100, 'bayar RM100');
+    assert.equal(warning, 'overpayment');
+    // Ledger unchanged
+    assert.equal(l2.length, 1);
+    assert.equal(l2[0].amountRM, 18);
+    assert.equal(p2.length, 0);
+  });
+
+  it('AC-PA-7: langsai marks all unpaid entries for customer as paid', () => {
+    const e1 = entry({ id: 'e1', customer: 'Ros', amountRM: 10, createdAt: createdAt(1) });
+    const e2 = entry({ id: 'e2', customer: 'Ros', amountRM: 8, createdAt: createdAt(2) });
+    const other = entry({ id: 'e3', customer: 'Ali', amountRM: 5, createdAt: createdAt(3) });
+    const { ledger: l2, payments: p2, warning } = applyPayment([e1, e2, other], [], 'Ros', null, 'langsai');
+    assert.equal(warning, null);
+    // All Ros entries paid
+    assert.ok(l2.filter(x => x.customer === 'Ros').every(x => x.paid));
+    // Ali's entry untouched
+    assert.equal(l2.find(x => x.id === 'e3').paid, false);
+    // One payment record summing total
+    assert.equal(p2.length, 1);
+    assert.equal(p2[0].amountRM, 18.00);
+  });
+
+  it('no_debt warning when customer has no unpaid entries', () => {
+    const paid = { ...entry({ id: 'p', customer: 'Ali', amountRM: 10, createdAt: createdAt(1) }), paid: true };
+    const { warning } = applyPayment([paid], [], 'Ali', 5, 'bayar RM5');
+    assert.equal(warning, 'no_debt');
+  });
+
+  it('no_debt warning for langsai when customer has no unpaid entries', () => {
+    const { warning } = applyPayment([], [], 'Ali', null, 'langsai');
+    assert.equal(warning, 'no_debt');
+  });
+
+  it('exact payment fully covers entry (no split)', () => {
+    const e = entry({ id: 'e1', customer: 'Ali', amountRM: 18, createdAt: createdAt(1) });
+    const { ledger: l2, warning } = applyPayment([e], [], 'Ali', 18, 'bayar RM18');
+    assert.equal(warning, null);
+    const unpaid = l2.filter(x => !x.paid && x.customer === 'Ali');
+    assert.equal(unpaid.length, 0);
+    const paid = l2.filter(x => x.paid && x.customer === 'Ali');
+    assert.equal(paid.length, 1);
+    assert.equal(paid[0].amountRM, 18);
+  });
+
+  it('FIFO: oldest entry paid first', () => {
+    // e2 created first (lower date), e1 created later
+    const e1 = entry({ id: 'e1', customer: 'Ali', amountRM: 10, createdAt: createdAt(5) });
+    const e2 = entry({ id: 'e2', customer: 'Ali', amountRM: 20, createdAt: createdAt(1) });
+    // Apply RM5 — should reduce e2 (oldest), not e1
+    const { ledger: l2, warning } = applyPayment([e1, e2], [], 'Ali', 5, 'bayar RM5');
+    assert.equal(warning, null);
+    // e2 should be split: 5 paid + 15 unpaid
+    const updatedE2 = l2.find(x => x.id === 'e2');
+    assert.equal(updatedE2.amountRM, 15.00); // remainder
+    assert.equal(updatedE2.paid, false);
+    // e1 untouched
+    const e1Updated = l2.find(x => x.id === 'e1');
+    assert.equal(e1Updated.amountRM, 10);
+    assert.equal(e1Updated.paid, false);
+  });
+
+  it('does not mutate the input ledger', () => {
+    const e = entry({ id: 'e1', customer: 'Ali', amountRM: 18, createdAt: createdAt(1) });
+    const originalLedger = [e];
+    applyPayment(originalLedger, [], 'Ali', 10, 'bayar RM10');
+    assert.equal(originalLedger.length, 1);
+    assert.equal(originalLedger[0].amountRM, 18);
+  });
+
+  it('does not mutate the input payments array', () => {
+    const e = entry({ id: 'e1', customer: 'Ali', amountRM: 18, createdAt: createdAt(1) });
+    const originalPayments = [];
+    applyPayment([e], originalPayments, 'Ali', 10, 'bayar RM10');
+    assert.equal(originalPayments.length, 0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Unit tests — exportJSON / importJSON with payments (FR-PA-5.2)
+// ---------------------------------------------------------------------------
+
+describe('exportJSON / importJSON with payments', () => {
+  it('exportJSON includes payments array', () => {
+    const e = entry({ id: 'e1' });
+    const p = { id: 'p1', customer: 'Ali', amountRM: 10, paidAt: '2026-10-01T00:00:00Z', raw: '' };
+    const json = exportJSON([e], {}, [p]);
+    const parsed = JSON.parse(json);
+    assert.equal(parsed.payments.length, 1);
+    assert.equal(parsed.payments[0].id, 'p1');
+  });
+
+  it('importJSON merges payments and deduplicates by id', () => {
+    const p1 = { id: 'p1', customer: 'Ali', amountRM: 10, paidAt: '2026-10-01T00:00:00Z', raw: '' };
+    const p2 = { id: 'p2', customer: 'Ali', amountRM: 5, paidAt: '2026-10-02T00:00:00Z', raw: '' };
+    const json = JSON.stringify({ version: 1, entries: [], phones: {}, payments: [p1, p2] });
+    // currentPayments already has p1 — only p2 should be added
+    const { payments } = importJSON(json, [], {}, [p1]);
+    assert.equal(payments.length, 2);
+    assert.ok(payments.some(p => p.id === 'p1'));
+    assert.ok(payments.some(p => p.id === 'p2'));
+  });
+
+  it('importJSON with no payments in backup returns current payments', () => {
+    const p1 = { id: 'p1', customer: 'Ali', amountRM: 10, paidAt: '2026-10-01T00:00:00Z', raw: '' };
+    const json = JSON.stringify({ version: 1, entries: [], phones: {} });
+    const { payments } = importJSON(json, [], {}, [p1]);
+    assert.equal(payments.length, 1);
+    assert.equal(payments[0].id, 'p1');
+  });
+
+  it('old backup (array format) returns empty payments', () => {
+    const e = entry({ id: 'e1' });
+    const json = JSON.stringify([e]);
+    const { payments } = importJSON(json, [], {}, []);
+    assert.deepEqual(payments, []);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Property-based tests — applyPayment (PA-1 through PA-10)
+// ---------------------------------------------------------------------------
+
+describe('applyPayment — PBT: balance never negative (PA-1)', () => {
+  it('PBT: customerTotal after payment >= 0', () => {
+    const arbEntry = (customer) => fc.record({
+      id:        fc.uuid(),
+      customer:  fc.constant(customer),
+      item:      fc.constant('item'),
+      qty:       fc.constant(null),
+      amountRM:  fc.integer({ min: 1, max: 1000 }).map(n => n / 100),
+      dueDate:   fc.constant(null),
+      paid:      fc.constant(false),
+      paidAt:    fc.constant(null),
+      createdAt: fc.constant('2026-10-01T00:00:00.000Z'),
+      raw:       fc.constant(''),
+    });
+
+    fc.assert(
+      fc.property(
+        fc.array(arbEntry('Ali'), { minLength: 1, maxLength: 5 }),
+        fc.integer({ min: 1, max: 500 }).map(n => n / 100),
+        (entries, payAmt) => {
+          const { ledger: l2, warning } = applyPayment(entries, [], 'Ali', payAmt, '');
+          if (warning) return true; // overpayment or no_debt — ledger unchanged
+          return customerTotal(l2, 'Ali') >= 0;
+        }
+      ),
+      { numRuns: 200 }
+    );
+  });
+});
+
+describe('applyPayment — PBT: sum invariant (PA-2)', () => {
+  it('PBT: balance_before - paymentApplied = balance_after', () => {
+    const arbEntry = fc.record({
+      id:        fc.uuid(),
+      customer:  fc.constant('Ali'),
+      item:      fc.constant('item'),
+      qty:       fc.constant(null),
+      amountRM:  fc.integer({ min: 1, max: 1000 }).map(n => n / 100),
+      dueDate:   fc.constant(null),
+      paid:      fc.constant(false),
+      paidAt:    fc.constant(null),
+      createdAt: fc.constant('2026-10-01T00:00:00.000Z'),
+      raw:       fc.constant(''),
+    });
+
+    fc.assert(
+      fc.property(
+        fc.array(arbEntry, { minLength: 1, maxLength: 10 }),
+        fc.integer({ min: 1, max: 2000 }).map(n => n / 100),
+        (entries, payAmt) => {
+          const before = customerTotal(entries, 'Ali');
+          const { ledger: l2, warning } = applyPayment(entries, [], 'Ali', payAmt, '');
+          if (warning) return true;
+          const after = customerTotal(l2, 'Ali');
+          const diff = Math.round((before - after) * 100) / 100;
+          return Math.abs(diff - Math.round(payAmt * 100) / 100) < 0.001;
+        }
+      ),
+      { numRuns: 200 }
+    );
+  });
+});
+
+describe('applyPayment — PBT: overpayment always rejected (PA-3)', () => {
+  it('PBT: amountRM > total → warning overpayment, ledger unchanged', () => {
+    const arbEntry = fc.record({
+      id:        fc.uuid(),
+      customer:  fc.constant('Ali'),
+      item:      fc.constant('item'),
+      qty:       fc.constant(null),
+      amountRM:  fc.integer({ min: 1, max: 500 }).map(n => n / 100),
+      dueDate:   fc.constant(null),
+      paid:      fc.constant(false),
+      paidAt:    fc.constant(null),
+      createdAt: fc.constant('2026-10-01T00:00:00.000Z'),
+      raw:       fc.constant(''),
+    });
+
+    fc.assert(
+      fc.property(
+        fc.array(arbEntry, { minLength: 1, maxLength: 5 }),
+        (entries) => {
+          const total = customerTotal(entries, 'Ali');
+          // Pay 1 cent more than total
+          const overAmt = Math.round((total + 0.01) * 100) / 100;
+          const { warning, ledger: l2 } = applyPayment(entries, [], 'Ali', overAmt, '');
+          if (warning !== 'overpayment') return false;
+          // Ledger should be referentially or value-equal to input
+          return customerTotal(l2, 'Ali') === total;
+        }
+      ),
+      { numRuns: 200 }
+    );
+  });
+});
+
+describe('applyPayment — PBT: langsai clears all (PA-5)', () => {
+  it('PBT: applyPayment with null amount clears all customer entries', () => {
+    const arbEntry = fc.record({
+      id:        fc.uuid(),
+      customer:  fc.constant('Ali'),
+      item:      fc.constant('item'),
+      qty:       fc.constant(null),
+      amountRM:  fc.integer({ min: 1, max: 1000 }).map(n => n / 100),
+      dueDate:   fc.constant(null),
+      paid:      fc.constant(false),
+      paidAt:    fc.constant(null),
+      createdAt: fc.constant('2026-10-01T00:00:00.000Z'),
+      raw:       fc.constant(''),
+    });
+
+    fc.assert(
+      fc.property(
+        fc.array(arbEntry, { minLength: 1, maxLength: 10 }),
+        (entries) => {
+          const { ledger: l2, warning } = applyPayment(entries, [], 'Ali', null, 'langsai');
+          if (warning) return true; // no_debt case
+          return customerTotal(l2, 'Ali') === 0;
+        }
+      ),
+      { numRuns: 150 }
+    );
+  });
+});
+
+describe('applyPayment — PBT: payment records grow by 1 (PA-9)', () => {
+  it('PBT: successful payment adds exactly 1 PaymentRecord', () => {
+    const arbEntry = fc.record({
+      id:        fc.uuid(),
+      customer:  fc.constant('Ali'),
+      item:      fc.constant('item'),
+      qty:       fc.constant(null),
+      amountRM:  fc.integer({ min: 1, max: 1000 }).map(n => n / 100),
+      dueDate:   fc.constant(null),
+      paid:      fc.constant(false),
+      paidAt:    fc.constant(null),
+      createdAt: fc.constant('2026-10-01T00:00:00.000Z'),
+      raw:       fc.constant(''),
+    });
+
+    fc.assert(
+      fc.property(
+        fc.array(arbEntry, { minLength: 1, maxLength: 5 }),
+        fc.integer({ min: 1, max: 200 }).map(n => n / 100),
+        (entries, payAmt) => {
+          const total = customerTotal(entries, 'Ali');
+          if (payAmt > total) return true; // would be overpayment
+          const { payments: p2, warning } = applyPayment(entries, [], 'Ali', payAmt, '');
+          if (warning) return true;
+          return p2.length === 1;
+        }
+      ),
+      { numRuns: 200 }
+    );
+  });
+});
+
+describe('applyPayment — PBT: all payment amountRM non-negative (PA-10)', () => {
+  it('PBT: every PaymentRecord has amountRM >= 0', () => {
+    const arbEntry = fc.record({
+      id:        fc.uuid(),
+      customer:  fc.constant('Ali'),
+      item:      fc.constant('item'),
+      qty:       fc.constant(null),
+      amountRM:  fc.integer({ min: 1, max: 1000 }).map(n => n / 100),
+      dueDate:   fc.constant(null),
+      paid:      fc.constant(false),
+      paidAt:    fc.constant(null),
+      createdAt: fc.constant('2026-10-01T00:00:00.000Z'),
+      raw:       fc.constant(''),
+    });
+
+    fc.assert(
+      fc.property(
+        fc.array(arbEntry, { minLength: 1, maxLength: 5 }),
+        fc.integer({ min: 1, max: 2000 }).map(n => n / 100),
+        (entries, payAmt) => {
+          const { payments: p2 } = applyPayment(entries, [], 'Ali', payAmt, '');
+          return p2.every(p => p.amountRM >= 0);
+        }
+      ),
+      { numRuns: 200 }
+    );
+  });
+});
+
+describe('applyPayment — PBT: total owed + payments = original debt (PA-2 full)', () => {
+  it('PBT: sum of payments for customer + balance = original total', () => {
+    const arbEntry = fc.record({
+      id:        fc.uuid(),
+      customer:  fc.constant('Ali'),
+      item:      fc.constant('item'),
+      qty:       fc.constant(null),
+      amountRM:  fc.integer({ min: 1, max: 1000 }).map(n => n / 100),
+      dueDate:   fc.constant(null),
+      paid:      fc.constant(false),
+      paidAt:    fc.constant(null),
+      createdAt: fc.constant('2026-10-01T00:00:00.000Z'),
+      raw:       fc.constant(''),
+    });
+
+    fc.assert(
+      fc.property(
+        fc.array(arbEntry, { minLength: 1, maxLength: 8 }),
+        fc.integer({ min: 1, max: 1000 }).map(n => n / 100),
+        (entries, payAmt) => {
+          const originalTotal = customerTotal(entries, 'Ali');
+          const { ledger: l2, payments: p2, warning } = applyPayment(entries, [], 'Ali', payAmt, '');
+          if (warning) return true;
+          const balanceAfter = customerTotal(l2, 'Ali');
+          const sumPayments = p2.reduce((s, p) => s + p.amountRM, 0);
+          const reconstructed = Math.round((balanceAfter + sumPayments) * 100) / 100;
+          return Math.abs(reconstructed - Math.round(originalTotal * 100) / 100) < 0.001;
+        }
+      ),
+      { numRuns: 200 }
+    );
   });
 });

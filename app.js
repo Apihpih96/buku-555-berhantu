@@ -21,6 +21,10 @@ import {
   normaliseMsisdn,
   demoEntries,
   topDebtors,
+  applyPayment,
+  migrateStorage,
+  customerPayments,
+  customerTotal,
 } from './ledger.js';
 import { t, DEFAULT_LANG } from './i18n.js';
 
@@ -35,6 +39,12 @@ let lang = DEFAULT_LANG;
 
 /** @type {import('./ledger.js').LedgerEntry[]} */
 let ledger = [];
+
+/**
+ * Payment records.
+ * @type {import('./ledger.js').PaymentRecord[]}
+ */
+let payments = [];
 
 /**
  * Map of customer name → normalised 60XXXXXXXXX phone number.
@@ -55,7 +65,7 @@ let deferredInstallPrompt = null;
 function saveState() {
   localStorage.setItem(
     STORAGE_KEY,
-    JSON.stringify({ version: 1, entries: ledger, phones, lang })
+    JSON.stringify({ version: 1, entries: ledger, payments, phones, lang })
   );
 }
 
@@ -64,11 +74,14 @@ function loadState() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return;
     const data = JSON.parse(raw);
-    ledger = Array.isArray(data.entries) ? data.entries : [];
-    phones = (data.phones && typeof data.phones === 'object') ? data.phones : {};
-    lang = data.lang === 'en' ? 'en' : 'ms';
+    const migrated = migrateStorage(data);
+    ledger = migrated.entries;
+    payments = migrated.payments;
+    phones = migrated.phones;
+    lang = migrated.lang;
   } catch {
     ledger = [];
+    payments = [];
     phones = {};
     lang = 'ms';
   }
@@ -217,6 +230,31 @@ function renderLedger() {
       section.appendChild(card);
     }
 
+    // Payment history for this customer
+    const custPayments = customerPayments(payments, customer);
+    if (custPayments.length > 0) {
+      const details = document.createElement('details');
+      details.className = 'payment-history';
+      details.setAttribute('aria-label', T('ariaPaymentHistory'));
+
+      const summary = document.createElement('summary');
+      summary.className = 'payment-history-summary';
+      summary.textContent = `${T('labelPaymentHistory')} (${custPayments.length})`;
+      details.appendChild(summary);
+
+      const ul = document.createElement('ul');
+      ul.className = 'payment-history-list';
+      for (const p of custPayments) {
+        const li = document.createElement('li');
+        li.className = 'payment-history-item';
+        const dateStr = p.paidAt ? p.paidAt.slice(0, 10) : '';
+        li.textContent = `${formatRM(p.amountRM)}  —  ${dateStr}`;
+        ul.appendChild(li);
+      }
+      details.appendChild(ul);
+      section.appendChild(details);
+    }
+
     container.appendChild(section);
   }
 
@@ -344,6 +382,17 @@ function onAddEntry() {
 
   const parsed = parse(raw);
 
+  // Route payment sentences
+  if (parsed.type === 'payment') {
+    if (!parsed.customer) {
+      showFeedback(T('errParseCustomer'), 'error');
+      return;
+    }
+    onApplyPayment(parsed.customer, parsed.amountRM, raw);
+    input.value = '';
+    return;
+  }
+
   if (!parsed.customer && !parsed.amountRM) {
     showFeedback(T('errParseBoth'), 'error');
     return;
@@ -371,6 +420,40 @@ function onAddEntry() {
   renderLedger();
   input.value = '';
   showFeedback(T('successAdd'), 'success');
+}
+
+/**
+ * Apply a payment for a customer (called when parser returns type: 'payment').
+ *
+ * @param {string}      customer
+ * @param {number|null} amountRM  — null = settle all
+ * @param {string}      raw
+ */
+function onApplyPayment(customer, amountRM, raw) {
+  const result = applyPayment(ledger, payments, customer, amountRM, raw);
+
+  if (result.warning === 'overpayment') {
+    const balance = customerTotal(ledger, customer);
+    const msg = T('errOverpayment').replace('{balance}', formatRM(balance));
+    showFeedback(msg, 'error');
+    return;
+  }
+  if (result.warning === 'no_debt') {
+    showFeedback(T('errNoDebt'), 'error');
+    return;
+  }
+
+  ledger = result.ledger;
+  payments = result.payments;
+  saveState();
+  renderLedger();
+
+  // Build feedback message
+  const appliedAmount = amountRM ?? customerTotal(ledger, customer);
+  const msg = T('successPayment')
+    .replace('{amount}', formatRM(appliedAmount))
+    .replace('{customer}', customer);
+  showFeedback(msg, 'success');
 }
 
 /** @param {string} id */
@@ -439,7 +522,7 @@ function onLangToggle() {
 }
 
 function onExport() {
-  const json = exportJSON(ledger, phones);
+  const json = exportJSON(ledger, phones, payments);
   const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -459,9 +542,10 @@ function onImport() {
     try {
       const text = await file.text();
       if (!confirm(T('confirmImport'))) return;
-      const result = importJSON(text, ledger, phones);
+      const result = importJSON(text, ledger, phones, payments);
       ledger = result.ledger;
       phones = result.phones;
+      payments = result.payments;
       saveState();
       renderLedger();
     } catch {

@@ -26,6 +26,15 @@ import { round2 } from './parser.js';
  * @property {string}       raw         — original input string
  */
 
+/**
+ * @typedef {Object} PaymentRecord
+ * @property {string} id         — unique id
+ * @property {string} customer
+ * @property {number} amountRM   — amount actually applied (>= 0)
+ * @property {string} paidAt     — ISO timestamp
+ * @property {string} raw        — original input string
+ */
+
 // ---------------------------------------------------------------------------
 // Factories
 // ---------------------------------------------------------------------------
@@ -173,27 +182,29 @@ export function customerTotal(ledger, customer) {
 // ---------------------------------------------------------------------------
 
 /**
- * Serialise ledger to JSON string, optionally including the phones map.
+ * Serialise ledger to JSON string, including the phones map and payment records.
  *
  * @param {LedgerEntry[]}            ledger
- * @param {Record<string,string>}    [phones]  — customer → normalised msisdn
+ * @param {Record<string,string>}    [phones]   — customer → normalised msisdn
+ * @param {PaymentRecord[]}          [payments] — payment history
  * @returns {string}
  */
-export function exportJSON(ledger, phones = {}) {
-  return JSON.stringify({ version: 1, entries: ledger, phones }, null, 2);
+export function exportJSON(ledger, phones = {}, payments = []) {
+  return JSON.stringify({ version: 1, entries: ledger, phones, payments }, null, 2);
 }
 
 /**
  * Merge an imported JSON backup into the current ledger.
- * Deduplicates by entry id (existing entries take precedence).
+ * Deduplicates entries and payments by id (existing take precedence).
  * Also extracts the phones map from the backup if present.
  *
  * @param {string}                   json
  * @param {LedgerEntry[]}            currentLedger
  * @param {Record<string,string>}    [currentPhones]
- * @returns {{ ledger: LedgerEntry[], phones: Record<string,string> }}
+ * @param {PaymentRecord[]}          [currentPayments]
+ * @returns {{ ledger: LedgerEntry[], phones: Record<string,string>, payments: PaymentRecord[] }}
  */
-export function importJSON(json, currentLedger, currentPhones = {}) {
+export function importJSON(json, currentLedger, currentPhones = {}, currentPayments = []) {
   let parsed;
   try {
     parsed = JSON.parse(json);
@@ -209,13 +220,161 @@ export function importJSON(json, currentLedger, currentPhones = {}) {
   const newEntries = incoming.filter(e => !existingIds.has(e.id));
   const mergedLedger = [...currentLedger, ...newEntries];
 
-  // Merge phones: existing take precedence (same as entries dedup)
+  // Merge phones: existing take precedence
   const backupPhones = (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
     ? (parsed.phones ?? {})
     : {};
   const mergedPhones = { ...backupPhones, ...currentPhones };
 
-  return { ledger: mergedLedger, phones: mergedPhones };
+  // Merge payments: existing take precedence
+  const incomingPayments = (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+    ? (parsed.payments ?? [])
+    : [];
+  const existingPaymentIds = new Set(currentPayments.map(p => p.id));
+  const newPayments = incomingPayments.filter(p => !existingPaymentIds.has(p.id));
+  const mergedPayments = [...currentPayments, ...newPayments];
+
+  return { ledger: mergedLedger, phones: mergedPhones, payments: mergedPayments };
+}
+
+// ---------------------------------------------------------------------------
+// Payments
+// ---------------------------------------------------------------------------
+
+/**
+ * Apply a payment to a customer's oldest unpaid entries (FIFO).
+ *
+ * @param {LedgerEntry[]}          ledger
+ * @param {PaymentRecord[]}        payments
+ * @param {string}                 customer
+ * @param {number|null}            amountRM   — null means "settle all" (langsai)
+ * @param {string}                 raw        — original input string
+ * @returns {{ ledger: LedgerEntry[], payments: PaymentRecord[], warning: string|null }}
+ */
+export function applyPayment(ledger, payments, customer, amountRM, raw) {
+  const now = new Date().toISOString();
+
+  // Settle-all path
+  if (amountRM === null) {
+    const unpaid = ledger.filter(e => !e.paid && e.customer === customer);
+    if (unpaid.length === 0) {
+      return { ledger, payments, warning: 'no_debt' };
+    }
+    const totalSettled = round2(unpaid.reduce((s, e) => s + e.amountRM, 0));
+    const updatedLedger = ledger.map(e =>
+      (!e.paid && e.customer === customer)
+        ? { ...e, paid: true, paidAt: now }
+        : e
+    );
+    const record = {
+      id: uid(),
+      customer,
+      amountRM: totalSettled,
+      paidAt: now,
+      raw: raw ?? '',
+    };
+    return { ledger: updatedLedger, payments: [...payments, record], warning: null };
+  }
+
+  // Overpayment guard
+  const outstanding = customerTotal(ledger, customer);
+  if (outstanding === 0) {
+    return { ledger, payments, warning: 'no_debt' };
+  }
+  if (round2(amountRM) > outstanding) {
+    return { ledger, payments, warning: 'overpayment' };
+  }
+
+  // FIFO partial payment
+  // Sort unpaid entries for this customer oldest-first by createdAt
+  const unpaidForCustomer = ledger
+    .filter(e => !e.paid && e.customer === customer)
+    .slice()
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
+  // Work on a mutable copy (map by id → new entry or same)
+  /** @type {Map<string, LedgerEntry>} */
+  const ledgerMap = new Map(ledger.map(e => [e.id, e]));
+  /** @type {LedgerEntry[]} */
+  const extraEntries = []; // paid stubs from splits
+
+  let remaining = round2(amountRM);
+
+  for (const entry of unpaidForCustomer) {
+    if (remaining <= 0) break;
+
+    if (round2(remaining) >= entry.amountRM) {
+      // Fully covers this entry — mark paid
+      remaining = round2(remaining - entry.amountRM);
+      ledgerMap.set(entry.id, { ...entry, paid: true, paidAt: now });
+    } else {
+      // Partial cover — split
+      const paidPortion = round2(remaining);
+      const unpaidPortion = round2(entry.amountRM - paidPortion);
+
+      // Paid stub (new entry)
+      const paidStub = {
+        ...entry,
+        id: uid(),
+        amountRM: paidPortion,
+        paid: true,
+        paidAt: now,
+      };
+      extraEntries.push(paidStub);
+
+      // Update original to remainder
+      ledgerMap.set(entry.id, { ...entry, amountRM: unpaidPortion });
+      remaining = 0;
+    }
+  }
+
+  // Rebuild ledger in original order + extra stubs at end
+  const updatedLedger = [...ledgerMap.values(), ...extraEntries];
+
+  // Append payment record
+  const record = {
+    id: uid(),
+    customer,
+    amountRM: round2(amountRM),
+    paidAt: now,
+    raw: raw ?? '',
+  };
+
+  return { ledger: updatedLedger, payments: [...payments, record], warning: null };
+}
+
+/**
+ * Migrate stored data to ensure all expected fields are present.
+ * Safe to call on any version of the stored object.
+ *
+ * @param {object} data  — raw parsed storage object
+ * @returns {{ version: number, entries: LedgerEntry[], payments: PaymentRecord[], phones: Record<string,string>, lang: string }}
+ */
+export function migrateStorage(data) {
+  if (!data || typeof data !== 'object') {
+    return { version: 1, entries: [], payments: [], phones: {}, lang: 'ms' };
+  }
+  return {
+    version: 1,
+    entries:  Array.isArray(data.entries)  ? data.entries  : [],
+    payments: Array.isArray(data.payments) ? data.payments : [],
+    phones:   (data.phones && typeof data.phones === 'object' && !Array.isArray(data.phones)) ? data.phones : {},
+    lang:     data.lang === 'en' ? 'en' : 'ms',
+  };
+}
+
+/**
+ * Return all PaymentRecord entries for a given customer, newest first.
+ *
+ * @param {PaymentRecord[]} payments
+ * @param {string}          customer
+ * @returns {PaymentRecord[]}
+ */
+export function customerPayments(payments, customer) {
+  return payments
+    .filter(p => p.customer === customer)
+    .slice()
+    .sort((a, b) => b.paidAt.localeCompare(a.paidAt));
 }
 
 // ---------------------------------------------------------------------------

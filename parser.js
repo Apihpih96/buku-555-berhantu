@@ -247,6 +247,229 @@ function extractDueDate(tokens, pos, today) {
 }
 
 // ---------------------------------------------------------------------------
+// Payment sentence detection
+// ---------------------------------------------------------------------------
+
+/**
+ * Multi-word payment trigger phrases (checked before single-word triggers).
+ * Order matters: longer phrases first so they match before their sub-words.
+ * @type {string[]}
+ */
+const PAYMENT_TRIGGERS_MULTI = [
+  'dah bayar', 'sudah bayar', 'settle semua', 'langsai semua',
+  'dah langsai', 'dah settle',
+];
+
+/**
+ * Single-word payment trigger tokens.
+ * Note: 'bayar' is only a payment trigger when followed by an amount, not a day name.
+ * @type {string[]}
+ */
+const PAYMENT_TRIGGERS_SINGLE_UNCONDITIONAL = ['bagi', 'settle', 'langsai'];
+
+/**
+ * Settle-all trigger phrases (amountRM becomes null).
+ * @type {Set<string>}
+ */
+const SETTLE_ALL_TRIGGERS = new Set(['langsai', 'settle semua', 'langsai semua', 'dah langsai', 'dah settle']);
+
+/**
+ * Check whether a normalised token array represents a payment sentence.
+ *
+ * Rules:
+ * - Multi-word triggers (dah bayar, sudah bayar, etc.) → always payment
+ * - 'bagi', 'settle', 'langsai' → always payment
+ * - 'bayar' alone: payment only when followed by an RM amount or Malay number + ringgit,
+ *   NOT when followed by a day name (in which case it's a debt-entry due-date clause).
+ *
+ * @param {string[]} tokens
+ * @returns {boolean}
+ */
+function isPaymentSentence(tokens) {
+  const joined = tokens.join(' ');
+
+  // Multi-word triggers always win
+  for (const phrase of PAYMENT_TRIGGERS_MULTI) {
+    if (joined.includes(phrase)) return true;
+  }
+
+  // Unconditional single-word triggers
+  for (const word of PAYMENT_TRIGGERS_SINGLE_UNCONDITIONAL) {
+    if (tokens.includes(word)) return true;
+  }
+
+  // 'bayar' — only a payment trigger when what follows looks like an amount, not a day name
+  const bayarIdx = tokens.indexOf('bayar');
+  if (bayarIdx !== -1) {
+    // Check if there is an RM literal anywhere in the sentence
+    const hasRmLiteral = tokens.some(t => /^rm\d/.test(t));
+    if (hasRmLiteral) {
+      // It's a payment only if there's also NO day name after bayar
+      // (debt entry: "ambil kembung RM18 bayar Jumaat" — has RM but bayar is due-date marker)
+      // (payment: "bayar RM10" or "dah bayar RM10")
+      // Heuristic: if bayar appears BEFORE any RM token, it's a payment
+      // If bayar appears AFTER any RM token, it's a due-date marker for a debt entry
+      const firstRmIdx = tokens.findIndex(t => /^rm\d/.test(t));
+      if (bayarIdx < firstRmIdx) {
+        // "bayar RM10 ..." → payment
+        return true;
+      }
+      // "... RM18 bayar Jumaat" → debt entry (due-date bayar)
+      return false;
+    }
+    // No RM literal — check for Malay number + ringgit after bayar
+    for (let i = bayarIdx + 1; i < tokens.length; i++) {
+      if (tokens[i] === 'ringgit' || tokens[i] === 'seringgit') return true;
+      const num = parseMalayNumber(tokens, i);
+      if (num !== null && tokens[i + num.consumed] === 'ringgit') return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Find which payment trigger phrase is present and return it.
+ * Returns the first match (longest first).
+ *
+ * @param {string[]} tokens
+ * @returns {{ phrase: string, start: number, end: number } | null}
+ */
+function findPaymentTrigger(tokens) {
+  const joined = tokens.join(' ');
+
+  // Multi-word triggers first (longer → more specific)
+  for (const phrase of PAYMENT_TRIGGERS_MULTI) {
+    if (!joined.includes(phrase)) continue;
+    const words = phrase.split(' ');
+    for (let i = 0; i <= tokens.length - words.length; i++) {
+      if (words.every((w, j) => tokens[i + j] === w)) {
+        return { phrase, start: i, end: i + words.length };
+      }
+    }
+  }
+
+  // Unconditional single-word triggers
+  for (const word of PAYMENT_TRIGGERS_SINGLE_UNCONDITIONAL) {
+    const idx = tokens.indexOf(word);
+    if (idx !== -1) {
+      return { phrase: word, start: idx, end: idx + 1 };
+    }
+  }
+
+  // 'bayar' as payment trigger (only if isPaymentSentence was true, so we can use it)
+  const bayarIdx = tokens.indexOf('bayar');
+  if (bayarIdx !== -1) {
+    return { phrase: 'bayar', start: bayarIdx, end: bayarIdx + 1 };
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Payment parser
+// ---------------------------------------------------------------------------
+
+/**
+ * @typedef {Object} ParsedPayment
+ * @property {'payment'} type
+ * @property {string | null} customer
+ * @property {number | null} amountRM   — null means "settle all"
+ */
+
+/**
+ * Parse a Malay payment sentence.
+ *
+ * @param {string} input
+ * @param {Date} today
+ * @returns {ParsedPayment}
+ */
+export function parsePayment(input, today) {
+  const normalised = input
+    .toLowerCase()
+    .replace(/(rm\s*\d+)[.,](\d{1,2})/gi, '$1.$2')
+    .replace(/[,،]/g, ' ')
+    .replace(/(\D)\.|\.(\D)/g, '$1 $2')
+    .replace(/^\.|\.$/, ' ')
+    .replace(/(\d)(kilo|kg|tin|biji|botol|liter|litre|paket|pack|gelas)\b/g, '$1 $2')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const tokens = normalised.split(' ');
+
+  // Find the trigger
+  const trigger = findPaymentTrigger(tokens);
+  const isSettleAll = trigger ? SETTLE_ALL_TRIGGERS.has(trigger.phrase) : false;
+
+  // Extract amount
+  const amountResult = extractAmount(tokens, 0);
+  let amountRM = amountResult ? round2(amountResult.value) : null;
+
+  // If it's a settle-all trigger with no explicit amount, keep null
+  if (isSettleAll && amountRM === null) {
+    amountRM = null;
+  }
+
+  // Build "used" set: trigger tokens + amount tokens
+  const usedRanges = [];
+  if (trigger) usedRanges.push([trigger.start, trigger.end]);
+  if (amountResult) usedRanges.push([amountResult.start, amountResult.end]);
+
+  /** @param {number} idx */
+  const isUsed = (idx) => usedRanges.some(([s, e]) => idx >= s && idx < e);
+
+  const remaining = tokens.map((t, i) => ({ t, i })).filter(({ i }) => !isUsed(i));
+
+  // Detect honorific
+  let honorific = '';
+  let nameStart = 0;
+
+  if (remaining.length >= 2) {
+    const twoWordH = remaining[0].t + ' ' + remaining[1].t;
+    if (HONORIFICS.includes(twoWordH)) {
+      honorific = titleCase(twoWordH);
+      nameStart = 2;
+    }
+  }
+  if (!honorific && remaining.length >= 1) {
+    if (HONORIFICS.includes(remaining[0].t)) {
+      honorific = titleCase(remaining[0].t);
+      nameStart = 1;
+    }
+  }
+
+  // Extract customer name (up to 2 words after honorific)
+  const VERBS = ['ambil', 'beli', 'hutang', 'pinjam', 'nak', 'minta'];
+  const UNITS_WORDS = ['kilo', 'kg', 'tin', 'biji', 'botol', 'liter', 'litre', 'paket', 'pack', 'gelas'];
+  const nameTokens = [];
+  let pos = nameStart;
+
+  while (pos < remaining.length) {
+    const word = remaining[pos].t;
+    if (VERBS.includes(word)) { pos++; break; }
+    if (MALAY_UNITS[word] !== undefined) break;
+    const twoWord = word + ' ' + (remaining[pos + 1]?.t ?? '');
+    if (MALAY_TENS[twoWord] !== undefined) break;
+    if (!isNaN(Number(word)) && word !== '') break;
+    if (UNITS_WORDS.includes(word)) break;
+    nameTokens.push(word);
+    pos++;
+    if (nameTokens.length >= 2) break;
+  }
+
+  const nameStr = nameTokens.map(titleCase).join(' ');
+  const customer = nameStr
+    ? (honorific ? `${honorific} ${nameStr}` : nameStr)
+    : (honorific || null);
+
+  return {
+    type: 'payment',
+    customer: customer || null,
+    amountRM,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Main parse function
 // ---------------------------------------------------------------------------
 
@@ -261,14 +484,28 @@ function extractDueDate(tokens, pos, today) {
 
 /**
  * Parse a Malay hutang sentence into structured fields.
+ * If the sentence is a payment, returns a {@link ParsedPayment} instead.
  *
  * @param {string} input
  * @param {Date} [today]  — injectable for tests; defaults to new Date()
- * @returns {ParsedEntry}
+ * @returns {ParsedEntry | ParsedPayment}
  */
 export function parse(input, today = new Date()) {
   if (!input || typeof input !== 'string') {
     return { customer: null, item: null, qty: null, amountRM: null, dueDate: null };
+  }
+
+  // Quick normalise for trigger detection (same pipeline as full normalise below)
+  const quickNorm = input
+    .toLowerCase()
+    .replace(/(rm\s*\d+)[.,](\d{1,2})/gi, '$1.$2')
+    .replace(/[,،]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const quickTokens = quickNorm.split(' ');
+
+  if (isPaymentSentence(quickTokens)) {
+    return parsePayment(input, today);
   }
 
   // Normalise: lowercase, preserve decimals in RM amounts, strip other punctuation
