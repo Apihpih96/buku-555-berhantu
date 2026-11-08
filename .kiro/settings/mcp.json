@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "buku555": {
+      "command": "node",
+      "args": ["mcp/server.js"],
+      "env": {
+        "BUKU555_DATA": "data/buku555.json"
+      },
+      "disabled": false,
+      "autoApprove": ["list_debts", "list_overdue_debts"]
+    }
+  }
+}

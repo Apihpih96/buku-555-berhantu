@@ -1,14 +1,14 @@
 {
   "enabled": true,
   "name": "Run tests on save",
-  "description": "Whenever a JavaScript source or test file is saved, run npm test and fix any failures without weakening existing tests.",
-  "version": "1",
+  "description": "Whenever a JavaScript file in the app (root, mcp/ or tests/) is saved, run npm test and fix any failures without weakening existing tests.",
+  "version": "2",
   "when": {
     "type": "fileEdited",
-    "patterns": ["*.js", "tests/*.js"]
+    "patterns": ["*.js", "mcp/*.js", "tests/*.js"]
   },
   "then": {
     "type": "askAgent",
-    "prompt": "A JavaScript file was just saved. Please run `npm test` now. If any tests fail, diagnose the root cause and fix the implementation (or the test if it contains a genuine bug) — but do NOT weaken or remove passing assertions. Keep running `npm test` until all tests are green, then briefly report what you changed."
+    "prompt": "A JavaScript file was just saved. Please run `npm test` now. If any tests fail, diagnose the root cause and fix the implementation (or the test if it contains a genuine bug) — but do NOT weaken or remove passing assertions. Keep running `npm test` until all tests are green, then briefly report what you changed. If `npm test` cannot run because dependencies are missing (e.g. fast-check not installed), run `npm install` first and say clearly if that fails rather than reporting the tests as passing."
   }
 }
