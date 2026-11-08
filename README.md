@@ -151,14 +151,53 @@ MIT © 2026 Mohammad Afif bin Mohd Saberi
 
 *"Hantu hutang paling menakutkan." 👻*
 
-## 🛠️ Built with Kiro
+## 🔌 MCP server
 
-- **Steering** (`.kiro/steering/`): Malay-first copy, no server or tracking, big tap targets for older traders.
-- **Spec** (`.kiro/specs/buku-555/`): EARS requirements, a design with correctness properties, and tasks T-1 to T-27 that Kiro completed one by one.
-- **Agent hooks** (`.kiro/hooks/`):
-  - `run-tests-on-save` runs `npm test` whenever a `.js` file is saved and fixes failures without weakening tests.
-  - `i18n-check` checks every key in `i18n.js` has both Malay and English when that file changes.
-- **Tests**: node:test plus fast-check property tests for the parser, ledger, reminders and top-debtors ranking.
+`mcp/server.js` is a small, dependency-free [MCP](https://modelcontextprotocol.io) server (stdio) that lets Kiro read and update a debt book.
+
+| Tool | What it does |
+|------|--------------|
+| `list_debts` | All debts + total outstanding (optional `status`: `all` / `unpaid` / `paid`) |
+| `add_debt` | Add a debt: `name`, `item`, `amount` (RM, > 0) |
+| `mark_debt_paid` | Mark a debt paid by `id` |
+| `list_overdue_debts` | Unpaid debts written in the book more than 7 days ago (optional `days`) |
+
+**Data:** the server reads and writes `data/buku555.json` (override with `BUKU555_DATA`), using the same format as the app's **Export** button: `{ "version": 1, "entries": [...], "phones": {} }`. The app itself stores data in your browser's localStorage, so to work with real data, export a backup from the app and save it as `data/buku555.json`. `data/` is git-ignored.
+
+**Run it:**
+
+```bash
+node mcp/server.js          # Node ≥ 18, no npm install needed
+```
+
+It speaks JSON-RPC on stdin/stdout, so you won't see a prompt. Kiro starts it for you via `.kiro/settings/mcp.json` (server name `buku555`). Open the MCP panel in Kiro (or restart the session) and the four tools appear. Read-only tools are auto-approved; `add_debt` and `mark_debt_paid` ask first.
+
+Quick manual check:
+
+```bash
+echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | node mcp/server.js
+```
+
+## 👻 Hantu Auditor agent
+
+`.kiro/agents/hantu-auditor.json` is a custom Kiro agent that audits the debt book through the MCP server. It is **read-only** (it can only call `list_debts` and `list_overdue_debts`).
+
+It looks for:
+- **Overdue** debts: unpaid and older than 7 days, or past their due date.
+- **Suspicious** debts: duplicates, unusually large amounts, blank or near-duplicate customer names, future dates, inconsistent paid fields, or many separate unpaid debts for one customer.
+
+For each flagged debt it writes why it was flagged, plus a spooky-but-friendly reminder in **Bahasa Melayu** and **English**. It never sends anything; you review the messages and send them yourself.
+
+Use it from the Kiro CLI with `kiro-cli --agent hantu-auditor` (or `/agent swap hantu-auditor` in a chat), then ask: *"Audit the book."*
+
+## 🧰 How Kiro built this
+
+- **Steering** (`.kiro/steering/`): `product.md`, `tech.md` and `structure.md` give Kiro the product vision and tech rules in every session: Malay-first copy, no server or tracking, big tap targets for older traders.
+- **Specs** (`.kiro/specs/`): `buku-555/` has the EARS requirements, a design with correctness properties, and tasks T-1 to T-27 that Kiro completed one by one; `mcp-server/` defines the MCP server the same way.
+- **Hooks** (`.kiro/hooks/`): `run-tests-on-save` runs `npm test` and fixes failures without weakening tests whenever a `.js` file is saved (root, `mcp/` or `tests/`); `i18n-check` makes sure every key in `i18n.js` has both Malay and English.
+- **MCP server** (`mcp/`, `.kiro/settings/mcp.json`): lets Kiro list debts, add a debt, mark one paid and list debts older than 7 days.
+- **Hantu Auditor agent** (`.kiro/agents/hantu-auditor.json`): audits the book through the MCP server and drafts a bilingual spooky-but-friendly reminder for each overdue or suspicious debt.
+- **Tests**: `node:test` plus `fast-check` property tests for the parser, ledger, reminders and top-debtors ranking.
 
 ## 📲 Install it
 
