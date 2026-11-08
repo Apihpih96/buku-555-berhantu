@@ -108,6 +108,7 @@ const STRINGS = {
   undoLabelPayment:  { ms: 'Bayaran dicatat. Nak batal?',      en: 'Payment recorded. Undo?' },
   undoLabelDelete:   { ms: 'Hutang dipadam. Nak batal?',       en: 'Entry deleted. Undo?' },
   undoLabelEdit:     { ms: 'Hutang dikemaskini. Nak batal?',   en: 'Entry updated. Undo?' },
+  undoLabelDemo:     { ms: 'Data demo dimuatkan. Nak batal?',  en: 'Demo data loaded. Undo?' },
   toastUndoDone:     { ms: 'Tindakan dibatalkan. ✓',           en: 'Action undone. ✓' },
 
   // Edit dialog

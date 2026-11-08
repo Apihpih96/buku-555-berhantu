@@ -29,6 +29,7 @@ import {
   customerTotal,
   daysSinceOldestUnpaid,
   formatLocalDate,
+  mergeSplitEntries,
 } from './ledger.js';
 import { t, DEFAULT_LANG } from './i18n.js';
 
@@ -579,6 +580,7 @@ function onAddEntry() {
  * @param {string}      raw
  */
 function onApplyPayment(customer, amountRM, raw) {
+  const balanceBefore = customerTotal(ledger, customer);
   const result = applyPayment(ledger, payments, customer, amountRM, raw);
 
   if (result.warning === 'overpayment') {
@@ -599,7 +601,7 @@ function onApplyPayment(customer, amountRM, raw) {
   renderLedger();
 
   // Build feedback message
-  const appliedAmount = amountRM ?? customerTotal(ledger, customer);
+  const appliedAmount = amountRM ?? balanceBefore;
   const msg = T('successPayment')
     .replace('{amount}', formatRM(appliedAmount))
     .replace('{customer}', customer);
@@ -1010,6 +1012,8 @@ function closeCustomerPage() {
   $('customer-page').hidden = true;
   $('app-main').hidden = false;
   $('app-footer').hidden = false;
+  // Bring the undo bar back if an undo is still available
+  if (undoHistory.length > 0 && undoTimer) $('undo-bar').hidden = false;
 }
 
 /**
@@ -1039,7 +1043,7 @@ function renderCustomerPage(customer) {
   if (days > 0) {
     $('customer-days-owed').textContent =
       lang === 'en'
-        ? `${T('labelDaysOwed')}: ${days} hari`
+        ? `${T('labelDaysOwed')}: ${days} ${days === 1 ? 'day' : 'days'}`
         : `${T('labelDaysOwed')}: ${days} hari`;
   } else {
     $('customer-days-owed').textContent = '';
@@ -1068,9 +1072,10 @@ function renderCustomerPage(customer) {
   // (interleaved by date would be complex; use simple two-section approach)
 
   // Entries section
-  for (const e of sortedEntries) {
+  for (const e of mergeSplitEntries(sortedEntries)) {
+    const fullyPaid = e.unpaidRM === 0;
     const row = document.createElement('div');
-    row.className = 'customer-stmt-row' + (e.paid ? ' paid' : ' unpaid');
+    row.className = 'customer-stmt-row' + (fullyPaid ? ' paid' : ' unpaid');
     row.setAttribute('role', 'listitem');
 
     const dateEl = document.createElement('span');
@@ -1083,16 +1088,19 @@ function renderCustomerPage(customer) {
 
     const amtEl = document.createElement('span');
     amtEl.className = 'stmt-amount';
-    amtEl.textContent = `RM${e.amountRM.toFixed(2)}`;
+    amtEl.textContent = `RM${e.totalRM.toFixed(2)}`;
 
     const statusEl = document.createElement('span');
     statusEl.className = 'stmt-status';
-    if (e.paid) {
-      const paidDate = e.paidAt ? formatLocalDate(e.paidAt.slice(0, 10), lang) : '';
+    if (fullyPaid) {
+      const paidDate = e.lastPaidAt ? formatLocalDate(e.lastPaidAt.slice(0, 10), lang) : '';
       statusEl.textContent = paidDate
         ? `${T('stmtPaid')} (${paidDate})`
         : T('stmtPaid');
       statusEl.classList.add('status-paid');
+    } else if (e.unpaidRM < e.totalRM) {
+      statusEl.textContent = `${T('stmtUnpaid')} (${T('labelBalance')} ${formatRM(e.unpaidRM)})`;
+      statusEl.classList.add('status-unpaid');
     } else {
       statusEl.textContent = T('stmtUnpaid');
       statusEl.classList.add('status-unpaid');
@@ -1279,11 +1287,14 @@ function init() {
 function onLoadDemo(ask) {
   if (ask && ledger.length > 0 && !confirm(T('confirmDemo'))) return;
   const demo = demoEntries(new Date());
+  pushUndo('undoLabelDemo');
   ledger   = demo.entries;
   payments = demo.payments;
+  phones   = {};
   saveState();
   renderAll();
   showFeedback(T('toastDemo'));
+  showUndoBar(T('undoLabelDemo'));
 }
 
 // Run when DOM is ready

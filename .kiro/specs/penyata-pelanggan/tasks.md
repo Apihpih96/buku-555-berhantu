@@ -55,3 +55,17 @@ Numbered checklist of implementation tasks. Each task references the requirement
 - [x] T-PS-14 Run `npm test` and fix all failures until all tests pass without weakening existing tests
 
 - [x] T-PS-15 Mark all completed tasks with `[x]`
+
+## Bug fixes after release review (2026-11-09)
+
+Found by a Kiro bug-hunt pass plus a headless-browser smoke test. Kiro ran out of
+monthly credits on that login before fixing them, so these fixes were made by hand
+(Hark), not by Kiro:
+
+- [x] Customer page overlay ignored the `hidden` attribute and covered the whole app (added `[hidden]` CSS rule)
+- [x] "langsai" toast showed RM0.00 instead of the settled amount
+- [x] Statement and customer page listed a partly paid debt twice (paid stub + payment record); now one row per debt with remaining baki (`mergeSplitEntries`)
+- [x] English customer page said "hari" instead of "days"
+- [x] Undo bar disappeared after closing the customer page
+- [x] Loading demo data kept old phone numbers and could not be undone
+- [x] Service worker cache version bumped (v5 -> v6) so returning visitors get the new app

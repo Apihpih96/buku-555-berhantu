@@ -730,6 +730,37 @@ export function daysSinceOldestUnpaid(entries, customer, today = new Date()) {
 }
 
 /**
+ * Merge the paid stubs that applyPayment() splits off (same createdAt, item,
+ * raw and qty) back into one row per original debt.
+ * Each row gets totalRM (original amount), unpaidRM (still owed) and
+ * lastPaidAt. Input order is preserved.
+ *
+ * @param {LedgerEntry[]} entries
+ * @returns {Array<LedgerEntry & {totalRM:number, unpaidRM:number, lastPaidAt:string|null}>}
+ */
+export function mergeSplitEntries(entries) {
+  const merged = [];
+  const byKey = new Map();
+  for (const e of entries) {
+    const key = `${e.customer}|${e.createdAt}|${e.item}|${e.raw ?? ''}|${e.qty ?? ''}`;
+    let m = byKey.get(key);
+    if (!m) {
+      m = { ...e, totalRM: 0, unpaidRM: 0, lastPaidAt: null };
+      byKey.set(key, m);
+      merged.push(m);
+    }
+    m.totalRM = round2(m.totalRM + e.amountRM);
+    if (e.paid) {
+      const at = e.paidAt ?? e.createdAt;
+      if (!m.lastPaidAt || at > m.lastPaidAt) m.lastPaidAt = at;
+    } else {
+      m.unpaidRM = round2(m.unpaidRM + e.amountRM);
+    }
+  }
+  return merged;
+}
+
+/**
  * Build a full itemised account statement for one customer.
  *
  * Returns `{ text, url }` where:
@@ -756,6 +787,9 @@ export function buildStatement(entries, payments, customer, msisdn, today = new 
 
   if (custEntries.length === 0) return { text: '', url: '' };
 
+  // Merge split stubs so a partial payment isn't listed twice
+  const merged = mergeSplitEntries(custEntries);
+
   // Payment records for this customer, oldest first
   const custPayments = payments
     .filter(p => p.customer === customer)
@@ -771,13 +805,18 @@ export function buildStatement(entries, payments, customer, msisdn, today = new 
     lines.push(`Account Statement — ${customer}`);
     lines.push(formatLocalDate(todayISO, 'en'));
     lines.push('');
-    for (const e of custEntries) {
+    for (const e of merged) {
       const dateStr = formatLocalDate(e.createdAt.slice(0, 10), 'en');
       const itemStr = e.qty ? `${e.item} ×${e.qty}` : e.item;
-      const status  = e.paid
-        ? `✓ Paid (${formatLocalDate((e.paidAt ?? e.createdAt).slice(0, 10), 'en')})`
-        : 'Unpaid';
-      lines.push(`${dateStr} | ${itemStr} | RM${e.amountRM.toFixed(2)} | ${status}`);
+      let status;
+      if (e.unpaidRM === 0) {
+        status = `✓ Paid (${formatLocalDate((e.lastPaidAt ?? e.createdAt).slice(0, 10), 'en')})`;
+      } else if (e.unpaidRM < e.totalRM) {
+        status = `Unpaid (balance RM${e.unpaidRM.toFixed(2)})`;
+      } else {
+        status = 'Unpaid';
+      }
+      lines.push(`${dateStr} | ${itemStr} | RM${e.totalRM.toFixed(2)} | ${status}`);
     }
     for (const p of custPayments) {
       const dateStr = formatLocalDate(p.paidAt.slice(0, 10), 'en');
@@ -793,13 +832,18 @@ export function buildStatement(entries, payments, customer, msisdn, today = new 
     lines.push(`Penyata Akaun — ${customer}`);
     lines.push(formatLocalDate(todayISO, 'ms'));
     lines.push('');
-    for (const e of custEntries) {
+    for (const e of merged) {
       const dateStr = formatLocalDate(e.createdAt.slice(0, 10), 'ms');
       const itemStr = e.qty ? `${e.item} ×${e.qty}` : e.item;
-      const status  = e.paid
-        ? `✓ Dah bayar (${formatLocalDate((e.paidAt ?? e.createdAt).slice(0, 10), 'ms')})`
-        : 'Belum bayar';
-      lines.push(`${dateStr} | ${itemStr} | RM${e.amountRM.toFixed(2)} | ${status}`);
+      let status;
+      if (e.unpaidRM === 0) {
+        status = `✓ Dah bayar (${formatLocalDate((e.lastPaidAt ?? e.createdAt).slice(0, 10), 'ms')})`;
+      } else if (e.unpaidRM < e.totalRM) {
+        status = `Belum bayar (baki RM${e.unpaidRM.toFixed(2)})`;
+      } else {
+        status = 'Belum bayar';
+      }
+      lines.push(`${dateStr} | ${itemStr} | RM${e.totalRM.toFixed(2)} | ${status}`);
     }
     for (const p of custPayments) {
       const dateStr = formatLocalDate(p.paidAt.slice(0, 10), 'ms');

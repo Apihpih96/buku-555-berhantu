@@ -596,3 +596,20 @@ describe('AC-PS-9: MCP statementText matches buildStatement', () => {
       'MCP statementText should exactly match buildStatement text');
   });
 });
+
+// Regression (Hark fix): a partial payment must not list the debt twice
+import { applyPayment as _applyPayment } from '../ledger.js';
+describe('buildStatement — partial payment regression', () => {
+  it('shows one line per original debt with remaining balance', () => {
+    const e = { id: 'a', customer: 'Kak Ros', item: 'kembung', qty: null, amountRM: 30, dueDate: null,
+      paid: false, paidAt: null, createdAt: '2026-11-01T02:00:00.000Z', raw: 'Kak Ros kembung RM30' };
+    const r = _applyPayment([e], [], 'Kak Ros', 10, 'Kak Ros bayar RM10');
+    const { text } = buildStatement(r.ledger, r.payments, 'Kak Ros', null, new Date('2026-11-09T04:00:00Z'), 'ms');
+    const itemLines = text.split('\n').filter(l => l.includes('kembung'));
+    assert.equal(itemLines.length, 1, text);
+    assert.ok(itemLines[0].includes('RM30.00'), text);
+    assert.ok(itemLines[0].includes('baki RM20.00'), text);
+    assert.ok(text.includes('✓ Bayar | RM10.00'), text);
+    assert.ok(text.includes('Baki: RM20.00'), text);
+  });
+});
