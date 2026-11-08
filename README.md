@@ -9,8 +9,18 @@
 ## 👻 Try the demo in 10 seconds
 
 Open **https://apihpih96.github.io/buku-555-berhantu/?demo=1** (or tap **👻 Cuba Demo** in the footer).
-It loads a sample warung book dated relative to today: Pak Mat and Kak Ros are overdue (ghosts appear),
-Abang Jeff is due today, Mak Cik Timah is next week, and Adik Hafiz has paid.
+It loads a sample warung book dated relative to today:
+
+- **Pak Mat** and **Kak Ros** are overdue (ghosts appear 👻).
+- **Kak Ros** has already made a partial payment of RM10 — her beras 5kg entry is split: RM10 paid, RM8.50 still owing. The payment history is visible under her name.
+- **Abang Jeff** is due today; **Mak Cik Timah** is next week; **Adik Hafiz** has paid in full.
+
+Try these actions to see the new features:
+
+- **Edit** — tap any entry card (not a button) to open the inline edit dialog. Change amount, item, or due date. The undo bar appears for 8 seconds.
+- **Undo** — tap **↩ Batal** in the yellow bar within 8 seconds to reverse the last action.
+- **Customer statement** — tap a customer's name to open their full account page, then tap **📋 Hantar Penyata** to send an itemised statement via WhatsApp.
+- **Partial payment** — type e.g. `Kak Ros bayar RM5` to apply a partial payment (FIFO, oldest entry first).
 
 Then tap **📲 Hantar Peringatan** on Kak Ros: enter any number once, and WhatsApp opens with one polite
 message listing everything she owes and the total. Nothing is sent until you press send.
@@ -40,7 +50,11 @@ big tap targets, Malay-first UI, works offline, no login, no server.
 | Feature | Detail |
 |---------|--------|
 | Voice input | Web Speech API, `ms-MY` locale, graceful fallback to text |
-| Malay parser | Handles honorifics, Malay numbers, RM amounts, relative/named days |
+| Malay parser | Handles honorifics, Malay numbers, RM amounts, relative/named days, payment phrases |
+| Partial payments | Type `Kak Ros bayar RM10` — FIFO allocation across oldest entries; full langsai with `settle semua`; payment history collapsible per customer |
+| Undo / Edit | Every action (add, mark paid, pay, edit, delete) is undoable for 8 seconds via an undo bar; tap any entry card to edit inline |
+| Customer statement | Tap a customer name for a full chronological account page; send an itemised WhatsApp statement via **Hantar Penyata** |
+| Customer search | Honorific-aware search box filters the ledger in real time |
 | Offline | Pure static site — works with no internet after first load |
 | WhatsApp reminders | WhatsApp click-to-chat links (api.whatsapp.com/send, keeps emoji intact), Malaysian numbers normalised to `60XXXXXXXXX` |
 | Backup | JSON export / import |
@@ -55,20 +69,24 @@ This project was built entirely using the **Kiro CLI** agentic development workf
 
 1. **Steering docs** (`.kiro/steering/`) — product vision, tech constraints, and project structure were authored first, giving the AI a persistent specification to reference throughout.
 
-2. **Spec generation** — Kiro generated three spec files in `.kiro/specs/buku-555/`:
-   - `requirements.md` — EARS-style user stories (WHEN/THEN/SHALL)
-   - `design.md` — architecture, data model, parser grammar, and correctness properties for property-based testing
-   - `tasks.md` — numbered implementation checklist referenced during coding
+2. **Spec generation** — Kiro generated spec files in `.kiro/specs/`:
+   - **`buku-555/`** — initial core app: EARS-style user stories, architecture/data-model design, and T-1–T-27 implementation tasks.
+   - **`bayaran-ansuran/`** — partial payments spec: FIFO payment allocation, `PaymentRecord` type, `applyPayment` function design, overpayment guard, payment history UI.
+   - **`undo-dan-edit/`** — undo/edit spec: 8-second undo bar, in-memory snapshot stack (max 20), inline edit dialog, in-app delete confirm dialog.
+   - **`penyata-pelanggan/`** — customer statement spec: customer page panel, `buildStatement` function, `daysSinceOldestUnpaid`, honorific-aware search, MCP `get_statement` tool.
 
-3. **Implementation** — Kiro implemented all source files (`parser.js`, `ledger.js`, `i18n.js`, `app.js`, `index.html`, `styles.css`, `assets/ghost.svg`) following the specs.
+3. **Implementation** — Kiro implemented all source files (`parser.js`, `ledger.js`, `i18n.js`, `app.js`, `index.html`, `styles.css`, `assets/ghost.svg`) following the specs, then extended them incrementally as each new spec was approved.
 
-4. **Property-based testing (PBT)** — `fast-check` properties were designed in `design.md` first, then implemented in `tests/`. Properties include:
+4. **Property-based testing (PBT)** — `fast-check` properties were designed in each spec's `design.md` first, then implemented in `tests/`. Properties include:
    - `amountRM` is always ≥ 0
    - `totalOutstanding` equals sum of unpaid entries
    - Marking paid reduces the total by exactly that entry's amount
    - Export → import round-trip preserves all entries
+   - `applyPayment`: amounts never negative, total after partial pay = prior total − paid amount
+   - Undo: n adds + n undos returns ledger to the original state
+   - `buildStatement`: statement total equals `customerTotal`; all items appear in output; URL prefix is always correct
 
-5. **Verification loop** — Kiro ran `npm install && npm test` and fixed failures until all tests were green.
+5. **Verification loop** — Kiro ran `npm install && npm test` and fixed failures until all tests were green, including after each new spec was integrated.
 
 ---
 
@@ -113,17 +131,26 @@ buku555/
 ├── index.html          # App shell, semantic HTML5
 ├── styles.css          # Haunted notebook theme
 ├── app.js              # UI bootstrap, event wiring, localStorage
-├── parser.js           # Pure Malay sentence parser
+├── parser.js           # Pure Malay sentence parser (debt + payment phrases)
 ├── ledger.js           # Pure ledger math & data functions
 ├── i18n.js             # ms/en string translations
 ├── assets/
 │   └── ghost.svg       # Friendly ghost SVG
 ├── tests/
 │   ├── parser.test.js  # Unit + PBT for parser
-│   └── ledger.test.js  # Unit + PBT for ledger
+│   ├── ledger.test.js  # Unit + PBT for ledger
+│   ├── undo.test.js    # Unit + PBT for undo/edit (updateEntry, snapshot stack)
+│   └── penyata.test.js # Unit + PBT for customer statement, search, MCP get_statement
+├── mcp/
+│   ├── server.js       # MCP stdio server
+│   └── debts.js        # Tool implementations (list, add, mark paid, get_statement)
 ├── .kiro/
 │   ├── steering/       # Product, tech & structure steering docs
-│   └── specs/buku-555/ # Requirements, design, tasks
+│   └── specs/
+│       ├── buku-555/          # Core app — requirements, design, tasks T-1–T-27
+│       ├── bayaran-ansuran/   # Partial payments spec
+│       ├── undo-dan-edit/     # Undo/edit spec
+│       └── penyata-pelanggan/ # Customer statement spec
 ├── package.json
 ├── LICENSE             # MIT
 └── README.md
@@ -193,11 +220,16 @@ Use it from the Kiro CLI with `kiro-cli --agent hantu-auditor` (or `/agent swap 
 ## 🧰 How Kiro built this
 
 - **Steering** (`.kiro/steering/`): `product.md`, `tech.md` and `structure.md` give Kiro the product vision and tech rules in every session: Malay-first copy, no server or tracking, big tap targets for older traders.
-- **Specs** (`.kiro/specs/`): `buku-555/` has the EARS requirements, a design with correctness properties, and tasks T-1 to T-27 that Kiro completed one by one; `mcp-server/` defines the MCP server the same way.
+- **Specs** (`.kiro/specs/`):
+  - `buku-555/` has the EARS requirements, a design with correctness properties, and tasks T-1 to T-27 that Kiro completed one by one.
+  - `bayaran-ansuran/` defines the partial payments feature — FIFO `applyPayment`, `PaymentRecord` type, overpayment guard, payment history collapsible in the UI.
+  - `undo-dan-edit/` defines the undo bar (8-second timer, max-20 in-memory snapshot stack) and the inline edit dialog with in-app delete confirm.
+  - `penyata-pelanggan/` defines the customer statement page, `buildStatement` with WhatsApp URL, `daysSinceOldestUnpaid`, honorific-aware search, and the MCP `get_statement` tool.
+  - `mcp-server/` defines the MCP server the same way.
 - **Hooks** (`.kiro/hooks/`): `run-tests-on-save` runs `npm test` and fixes failures without weakening tests whenever a `.js` file is saved (root, `mcp/` or `tests/`); `i18n-check` makes sure every key in `i18n.js` has both Malay and English.
-- **MCP server** (`mcp/`, `.kiro/settings/mcp.json`): lets Kiro list debts, add a debt, mark one paid and list debts older than 7 days.
+- **MCP server** (`mcp/`, `.kiro/settings/mcp.json`): lets Kiro list debts, add a debt, mark one paid, list debts older than 7 days, and fetch a customer statement via `get_statement`.
 - **Hantu Auditor agent** (`.kiro/agents/hantu-auditor.json`): audits the book through the MCP server and drafts a bilingual spooky-but-friendly reminder for each overdue or suspicious debt.
-- **Tests**: `node:test` plus `fast-check` property tests for the parser, ledger, reminders and top-debtors ranking.
+- **Tests**: `node:test` plus `fast-check` property tests across four suites — parser, ledger, undo/edit, and customer statement. PBT properties cover amounts-never-negative, total = sum of unpaid, undo reversibility, and statement correctness.
 
 ## 📲 Install it
 

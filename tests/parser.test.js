@@ -215,3 +215,189 @@ describe('formatRM — property: idempotent', () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// Unit tests — payment sentence parsing (FR-PA-1)
+// ---------------------------------------------------------------------------
+
+describe('parser — payment sentences', () => {
+
+  it('Kak Ros bayar RM10 → payment', () => {
+    const r = parse('Kak Ros bayar RM10', TODAY);
+    assert.equal(r.type, 'payment');
+    assert.equal(r.customer, 'Kak Ros');
+    assert.equal(r.amountRM, 10.00);
+  });
+
+  it('Kak Ros dah bayar dua puluh ringgit → payment', () => {
+    const r = parse('Kak Ros dah bayar dua puluh ringgit', TODAY);
+    assert.equal(r.type, 'payment');
+    assert.equal(r.customer, 'Kak Ros');
+    assert.equal(r.amountRM, 20.00);
+  });
+
+  it('Abang Jeff bagi RM5 → payment', () => {
+    const r = parse('Abang Jeff bagi RM5', TODAY);
+    assert.equal(r.type, 'payment');
+    assert.equal(r.customer, 'Abang Jeff');
+    assert.equal(r.amountRM, 5.00);
+  });
+
+  it('Mak Cik Timah settle RM30 → payment', () => {
+    const r = parse('Mak Cik Timah settle RM30', TODAY);
+    assert.equal(r.type, 'payment');
+    assert.equal(r.customer, 'Mak Cik Timah');
+    assert.equal(r.amountRM, 30.00);
+  });
+
+  it('Pak Cik Hamid langsai → settle-all (amountRM null)', () => {
+    const r = parse('Pak Cik Hamid langsai', TODAY);
+    assert.equal(r.type, 'payment');
+    assert.equal(r.customer, 'Pak Cik Hamid');
+    assert.equal(r.amountRM, null);
+  });
+
+  it('Kak Ros settle semua → settle-all', () => {
+    const r = parse('Kak Ros settle semua', TODAY);
+    assert.equal(r.type, 'payment');
+    assert.equal(r.customer, 'Kak Ros');
+    assert.equal(r.amountRM, null);
+  });
+
+  it('Kak Ros langsai semua → settle-all', () => {
+    const r = parse('Kak Ros langsai semua', TODAY);
+    assert.equal(r.type, 'payment');
+    assert.equal(r.customer, 'Kak Ros');
+    assert.equal(r.amountRM, null);
+  });
+
+  it('Kak Ros dah langsai RM18 → payment with amount', () => {
+    const r = parse('Kak Ros dah langsai RM18', TODAY);
+    assert.equal(r.type, 'payment');
+    assert.equal(r.customer, 'Kak Ros');
+    assert.equal(r.amountRM, 18.00);
+  });
+
+  it('sudah bayar: Ali sudah bayar RM25 → payment', () => {
+    const r = parse('Ali sudah bayar RM25', TODAY);
+    assert.equal(r.type, 'payment');
+    assert.equal(r.customer, 'Ali');
+    assert.equal(r.amountRM, 25.00);
+  });
+
+  it('seringgit in payment: Ali bayar seringgit', () => {
+    // "bayar seringgit" — no RM literal so isPaymentSentence checks for seringgit after bayar
+    const r = parse('Ali bayar seringgit', TODAY);
+    assert.equal(r.type, 'payment');
+    assert.equal(r.customer, 'Ali');
+    assert.equal(r.amountRM, 1.00);
+  });
+
+  it('payment with decimal: Ali bayar RM12.50', () => {
+    const r = parse('Ali bayar RM12.50', TODAY);
+    assert.equal(r.type, 'payment');
+    assert.equal(r.customer, 'Ali');
+    assert.equal(r.amountRM, 12.50);
+  });
+
+  it('no customer returns null customer', () => {
+    const r = parse('bayar RM10', TODAY);
+    assert.equal(r.type, 'payment');
+    assert.equal(r.customer, null);
+  });
+
+  it('debt entry with bayar due-date is NOT a payment', () => {
+    // "RM18 bayar Jumaat" — bayar comes AFTER RM, so it is a due-date marker
+    const r = parse('Kak Ros ambil 2 kilo kembung RM18, bayar Jumaat', TODAY);
+    assert.ok(!r.type, `should not be payment, got type: ${r.type}`);
+    assert.equal(r.customer, 'Kak Ros');
+    assert.equal(r.amountRM, 18.00);
+    assert.equal(r.dueDate, '2026-11-06');
+  });
+
+  it('Encik Ali hutang ayam RM25.50 is NOT a payment', () => {
+    const r = parse('Encik Ali hutang ayam RM25.50', TODAY);
+    assert.ok(!r.type, `should not be payment`);
+    assert.equal(r.customer, 'Encik Ali');
+    assert.equal(r.amountRM, 25.50);
+  });
+
+  it('Malay amount in payment: Ros bayar lima ringgit', () => {
+    const r = parse('Ros bayar lima ringgit', TODAY);
+    assert.equal(r.type, 'payment');
+    assert.equal(r.customer, 'Ros');
+    assert.equal(r.amountRM, 5.00);
+  });
+
+  it('dah settle: Encik Ali dah settle RM50', () => {
+    const r = parse('Encik Ali dah settle RM50', TODAY);
+    assert.equal(r.type, 'payment');
+    assert.equal(r.customer, 'Encik Ali');
+    assert.equal(r.amountRM, 50.00);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Property-based tests — payment parsing
+// ---------------------------------------------------------------------------
+
+describe('parser — PBT: payment amountRM always non-negative', () => {
+  it('PBT: payment amountRM >= 0 or null', () => {
+    fc.assert(
+      fc.property(
+        fc.float({ min: 0, max: 10000, noNaN: true }),
+        (amount) => {
+          const whole = Math.floor(amount);
+          const cents = Math.round((amount % 1) * 100);
+          const input = `Kak Ros bayar RM${whole}.${String(cents).padStart(2, '0')}`;
+          const r = parse(input, TODAY);
+          if (r.type !== 'payment') return true; // not detected as payment, skip
+          return r.amountRM === null || r.amountRM >= 0;
+        }
+      ),
+      { numRuns: 200 }
+    );
+  });
+});
+
+describe('parser — PBT: payment customer non-empty when detected', () => {
+  it('PBT: payment customer non-empty string when not null', () => {
+    const names = fc.constantFrom('Ali', 'Kak Ros', 'Mak Cik Timah', 'Encik Ahmad');
+    fc.assert(
+      fc.property(names, (name) => {
+        const r = parse(`${name} langsai`, TODAY);
+        if (r.customer !== null) {
+          return typeof r.customer === 'string' && r.customer.trim().length > 0;
+        }
+        return true;
+      }),
+      { numRuns: 100 }
+    );
+  });
+});
+
+// Regression tests (Hark review fixes, 2026-11-09)
+describe('parser — payment edge cases (review fixes)', () => {
+  const D = new Date('2026-11-09T04:00:00Z');
+  it('"bagi" after a debt verb stays a debt', () => {
+    const r = parse('Kak Ros ambil roti bagi anak RM5', D);
+    assert.notEqual(r.type, 'payment');
+    assert.equal(r.amountRM, 5);
+  });
+  it('"dah bayar" with no amount is not settle-all', () => {
+    const r = parse('Kak Ros dah bayar', D);
+    assert.equal(r.type, 'payment');
+    assert.equal(r.settleAll, false);
+  });
+  it('langsai is settle-all', () => {
+    assert.equal(parse('Pak Ali langsai', D).settleAll, true);
+  });
+  it('filler words do not join the customer name', () => {
+    assert.equal(parse('Kak Ros bayar RM10 dulu', D).customer, 'Kak Ros');
+    assert.equal(parse('Kak Ros bayar dulu RM10', D).customer, 'Kak Ros');
+  });
+  it('"rm 5" with a space is read as RM5', () => {
+    assert.equal(parse('kak ros dah bayar rm 5', D).amountRM, 5);
+    assert.equal(parse('Kak Ros ambil gula rm 5', D).amountRM, 5);
+  });
+});

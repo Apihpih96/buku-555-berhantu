@@ -26,6 +26,15 @@ import { round2 } from './parser.js';
  * @property {string}       raw         — original input string
  */
 
+/**
+ * @typedef {Object} PaymentRecord
+ * @property {string} id         — unique id
+ * @property {string} customer
+ * @property {number} amountRM   — amount actually applied (>= 0)
+ * @property {string} paidAt     — ISO timestamp
+ * @property {string} raw        — original input string
+ */
+
 // ---------------------------------------------------------------------------
 // Factories
 // ---------------------------------------------------------------------------
@@ -106,6 +115,29 @@ export function deleteEntry(ledger, id) {
   return ledger.filter(e => e.id !== id);
 }
 
+/**
+ * Update mutable fields of an entry by id.
+ * Returns a new array; the original is not mutated.
+ *
+ * @param {LedgerEntry[]} ledger
+ * @param {string}        id
+ * @param {{ customer?: string, item?: string, qty?: number|null, amountRM?: number, dueDate?: string|null, raw?: string }} fields
+ * @returns {LedgerEntry[]}
+ */
+export function updateEntry(ledger, id, fields) {
+  if (fields.amountRM !== undefined && fields.amountRM < 0) {
+    throw new RangeError(`amountRM must be >= 0, got ${fields.amountRM}`);
+  }
+  return ledger.map(e => {
+    if (e.id !== id) return e;
+    return {
+      ...e,
+      ...fields,
+      amountRM: fields.amountRM !== undefined ? round2(fields.amountRM) : e.amountRM,
+    };
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Queries
 // ---------------------------------------------------------------------------
@@ -173,27 +205,29 @@ export function customerTotal(ledger, customer) {
 // ---------------------------------------------------------------------------
 
 /**
- * Serialise ledger to JSON string, optionally including the phones map.
+ * Serialise ledger to JSON string, including the phones map and payment records.
  *
  * @param {LedgerEntry[]}            ledger
- * @param {Record<string,string>}    [phones]  — customer → normalised msisdn
+ * @param {Record<string,string>}    [phones]   — customer → normalised msisdn
+ * @param {PaymentRecord[]}          [payments] — payment history
  * @returns {string}
  */
-export function exportJSON(ledger, phones = {}) {
-  return JSON.stringify({ version: 1, entries: ledger, phones }, null, 2);
+export function exportJSON(ledger, phones = {}, payments = []) {
+  return JSON.stringify({ version: 1, entries: ledger, phones, payments }, null, 2);
 }
 
 /**
  * Merge an imported JSON backup into the current ledger.
- * Deduplicates by entry id (existing entries take precedence).
+ * Deduplicates entries and payments by id (existing take precedence).
  * Also extracts the phones map from the backup if present.
  *
  * @param {string}                   json
  * @param {LedgerEntry[]}            currentLedger
  * @param {Record<string,string>}    [currentPhones]
- * @returns {{ ledger: LedgerEntry[], phones: Record<string,string> }}
+ * @param {PaymentRecord[]}          [currentPayments]
+ * @returns {{ ledger: LedgerEntry[], phones: Record<string,string>, payments: PaymentRecord[] }}
  */
-export function importJSON(json, currentLedger, currentPhones = {}) {
+export function importJSON(json, currentLedger, currentPhones = {}, currentPayments = []) {
   let parsed;
   try {
     parsed = JSON.parse(json);
@@ -209,13 +243,161 @@ export function importJSON(json, currentLedger, currentPhones = {}) {
   const newEntries = incoming.filter(e => !existingIds.has(e.id));
   const mergedLedger = [...currentLedger, ...newEntries];
 
-  // Merge phones: existing take precedence (same as entries dedup)
+  // Merge phones: existing take precedence
   const backupPhones = (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
     ? (parsed.phones ?? {})
     : {};
   const mergedPhones = { ...backupPhones, ...currentPhones };
 
-  return { ledger: mergedLedger, phones: mergedPhones };
+  // Merge payments: existing take precedence
+  const incomingPayments = (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+    ? (parsed.payments ?? [])
+    : [];
+  const existingPaymentIds = new Set(currentPayments.map(p => p.id));
+  const newPayments = incomingPayments.filter(p => !existingPaymentIds.has(p.id));
+  const mergedPayments = [...currentPayments, ...newPayments];
+
+  return { ledger: mergedLedger, phones: mergedPhones, payments: mergedPayments };
+}
+
+// ---------------------------------------------------------------------------
+// Payments
+// ---------------------------------------------------------------------------
+
+/**
+ * Apply a payment to a customer's oldest unpaid entries (FIFO).
+ *
+ * @param {LedgerEntry[]}          ledger
+ * @param {PaymentRecord[]}        payments
+ * @param {string}                 customer
+ * @param {number|null}            amountRM   — null means "settle all" (langsai)
+ * @param {string}                 raw        — original input string
+ * @returns {{ ledger: LedgerEntry[], payments: PaymentRecord[], warning: string|null }}
+ */
+export function applyPayment(ledger, payments, customer, amountRM, raw) {
+  const now = new Date().toISOString();
+
+  // Settle-all path
+  if (amountRM === null) {
+    const unpaid = ledger.filter(e => !e.paid && e.customer === customer);
+    if (unpaid.length === 0) {
+      return { ledger, payments, warning: 'no_debt' };
+    }
+    const totalSettled = round2(unpaid.reduce((s, e) => s + e.amountRM, 0));
+    const updatedLedger = ledger.map(e =>
+      (!e.paid && e.customer === customer)
+        ? { ...e, paid: true, paidAt: now }
+        : e
+    );
+    const record = {
+      id: uid(),
+      customer,
+      amountRM: totalSettled,
+      paidAt: now,
+      raw: raw ?? '',
+    };
+    return { ledger: updatedLedger, payments: [...payments, record], warning: null };
+  }
+
+  // Overpayment guard
+  const outstanding = customerTotal(ledger, customer);
+  if (outstanding === 0) {
+    return { ledger, payments, warning: 'no_debt' };
+  }
+  if (round2(amountRM) > outstanding) {
+    return { ledger, payments, warning: 'overpayment' };
+  }
+
+  // FIFO partial payment
+  // Sort unpaid entries for this customer oldest-first by createdAt
+  const unpaidForCustomer = ledger
+    .filter(e => !e.paid && e.customer === customer)
+    .slice()
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
+  // Work on a mutable copy (map by id → new entry or same)
+  /** @type {Map<string, LedgerEntry>} */
+  const ledgerMap = new Map(ledger.map(e => [e.id, e]));
+  /** @type {LedgerEntry[]} */
+  const extraEntries = []; // paid stubs from splits
+
+  let remaining = round2(amountRM);
+
+  for (const entry of unpaidForCustomer) {
+    if (remaining <= 0) break;
+
+    if (round2(remaining) >= entry.amountRM) {
+      // Fully covers this entry — mark paid
+      remaining = round2(remaining - entry.amountRM);
+      ledgerMap.set(entry.id, { ...entry, paid: true, paidAt: now });
+    } else {
+      // Partial cover — split
+      const paidPortion = round2(remaining);
+      const unpaidPortion = round2(entry.amountRM - paidPortion);
+
+      // Paid stub (new entry)
+      const paidStub = {
+        ...entry,
+        id: uid(),
+        amountRM: paidPortion,
+        paid: true,
+        paidAt: now,
+      };
+      extraEntries.push(paidStub);
+
+      // Update original to remainder
+      ledgerMap.set(entry.id, { ...entry, amountRM: unpaidPortion });
+      remaining = 0;
+    }
+  }
+
+  // Rebuild ledger in original order + extra stubs at end
+  const updatedLedger = [...ledgerMap.values(), ...extraEntries];
+
+  // Append payment record
+  const record = {
+    id: uid(),
+    customer,
+    amountRM: round2(amountRM),
+    paidAt: now,
+    raw: raw ?? '',
+  };
+
+  return { ledger: updatedLedger, payments: [...payments, record], warning: null };
+}
+
+/**
+ * Migrate stored data to ensure all expected fields are present.
+ * Safe to call on any version of the stored object.
+ *
+ * @param {object} data  — raw parsed storage object
+ * @returns {{ version: number, entries: LedgerEntry[], payments: PaymentRecord[], phones: Record<string,string>, lang: string }}
+ */
+export function migrateStorage(data) {
+  if (!data || typeof data !== 'object') {
+    return { version: 1, entries: [], payments: [], phones: {}, lang: 'ms' };
+  }
+  return {
+    version: 1,
+    entries:  Array.isArray(data.entries)  ? data.entries  : [],
+    payments: Array.isArray(data.payments) ? data.payments : [],
+    phones:   (data.phones && typeof data.phones === 'object' && !Array.isArray(data.phones)) ? data.phones : {},
+    lang:     data.lang === 'en' ? 'en' : 'ms',
+  };
+}
+
+/**
+ * Return all PaymentRecord entries for a given customer, newest first.
+ *
+ * @param {PaymentRecord[]} payments
+ * @param {string}          customer
+ * @returns {PaymentRecord[]}
+ */
+export function customerPayments(payments, customer) {
+  return payments
+    .filter(p => p.customer === customer)
+    .slice()
+    .sort((a, b) => b.paidAt.localeCompare(a.paidAt));
 }
 
 // ---------------------------------------------------------------------------
@@ -521,6 +703,172 @@ function calendarDaysDiff(fromISO, toISO) {
 }
 
 // ---------------------------------------------------------------------------
+// Customer Statement
+// ---------------------------------------------------------------------------
+
+/**
+ * Number of calendar days between the `createdAt` of the oldest unpaid entry
+ * for `customer` and `today`. Returns 0 if the customer has no unpaid entries.
+ *
+ * @param {LedgerEntry[]} entries
+ * @param {string}        customer
+ * @param {Date}          today
+ * @returns {number}
+ */
+export function daysSinceOldestUnpaid(entries, customer, today = new Date()) {
+  const unpaid = entries.filter(e => !e.paid && e.customer === customer);
+  if (unpaid.length === 0) return 0;
+  // Find oldest createdAt
+  let oldest = unpaid[0].createdAt;
+  for (const e of unpaid) {
+    if (e.createdAt < oldest) oldest = e.createdAt;
+  }
+  // Convert ISO timestamp to YYYY-MM-DD (local date)
+  const fromISO = oldest.slice(0, 10);
+  const toISO   = localISO(today);
+  return calendarDaysDiff(fromISO, toISO);
+}
+
+/**
+ * Merge the paid stubs that applyPayment() splits off (same createdAt, item,
+ * raw and qty) back into one row per original debt.
+ * Each row gets totalRM (original amount), unpaidRM (still owed) and
+ * lastPaidAt. Input order is preserved.
+ *
+ * @param {LedgerEntry[]} entries
+ * @returns {Array<LedgerEntry & {totalRM:number, unpaidRM:number, lastPaidAt:string|null}>}
+ */
+export function mergeSplitEntries(entries) {
+  const merged = [];
+  const byKey = new Map();
+  for (const e of entries) {
+    const key = `${e.customer}|${e.createdAt}|${e.item}|${e.raw ?? ''}|${e.qty ?? ''}`;
+    let m = byKey.get(key);
+    if (!m) {
+      m = { ...e, totalRM: 0, unpaidRM: 0, lastPaidAt: null };
+      byKey.set(key, m);
+      merged.push(m);
+    }
+    m.totalRM = round2(m.totalRM + e.amountRM);
+    if (e.paid) {
+      const at = e.paidAt ?? e.createdAt;
+      if (!m.lastPaidAt || at > m.lastPaidAt) m.lastPaidAt = at;
+    } else {
+      m.unpaidRM = round2(m.unpaidRM + e.amountRM);
+    }
+  }
+  return merged;
+}
+
+/**
+ * Build a full itemised account statement for one customer.
+ *
+ * Returns `{ text, url }` where:
+ *  - `text` is the complete statement message string
+ *  - `url`  is the full `https://api.whatsapp.com/send?phone=...&text=...` URL
+ *            (or '' if msisdn is blank / customer has no entries)
+ *
+ * Uses LOCAL calendar dates — never toISOString() for display.
+ *
+ * @param {LedgerEntry[]}   entries   — full ledger
+ * @param {PaymentRecord[]} payments  — full payment records
+ * @param {string}          customer  — customer name
+ * @param {string}          msisdn    — raw phone number (will be normalised)
+ * @param {Date}            today     — reference date
+ * @param {'ms'|'en'}       [lang]    — default 'ms'
+ * @returns {{ text: string, url: string }}
+ */
+export function buildStatement(entries, payments, customer, msisdn, today = new Date(), lang = 'ms') {
+  // All entries for this customer (paid + unpaid), oldest first
+  const custEntries = entries
+    .filter(e => e.customer === customer)
+    .slice()
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
+  if (custEntries.length === 0) return { text: '', url: '' };
+
+  // Merge split stubs so a partial payment isn't listed twice
+  const merged = mergeSplitEntries(custEntries);
+
+  // Payment records for this customer, oldest first
+  const custPayments = payments
+    .filter(p => p.customer === customer)
+    .slice()
+    .sort((a, b) => a.paidAt.localeCompare(b.paidAt));
+
+  const todayISO = localISO(today);
+  const totalOwed = round2(custEntries.filter(e => !e.paid).reduce((s, e) => s + e.amountRM, 0));
+
+  const lines = [];
+
+  if (lang === 'en') {
+    lines.push(`Account Statement — ${customer}`);
+    lines.push(formatLocalDate(todayISO, 'en'));
+    lines.push('');
+    for (const e of merged) {
+      const dateStr = formatLocalDate(e.createdAt.slice(0, 10), 'en');
+      const itemStr = e.qty ? `${e.item} ×${e.qty}` : e.item;
+      let status;
+      if (e.unpaidRM === 0) {
+        status = `✓ Paid (${formatLocalDate((e.lastPaidAt ?? e.createdAt).slice(0, 10), 'en')})`;
+      } else if (e.unpaidRM < e.totalRM) {
+        status = `Unpaid (balance RM${e.unpaidRM.toFixed(2)})`;
+      } else {
+        status = 'Unpaid';
+      }
+      lines.push(`${dateStr} | ${itemStr} | RM${e.totalRM.toFixed(2)} | ${status}`);
+    }
+    for (const p of custPayments) {
+      const dateStr = formatLocalDate(p.paidAt.slice(0, 10), 'en');
+      lines.push(`${dateStr} | ✓ Payment | RM${p.amountRM.toFixed(2)}`);
+    }
+    lines.push('');
+    if (totalOwed > 0) {
+      lines.push(`Balance: RM${totalOwed.toFixed(2)}`);
+    } else {
+      lines.push('No outstanding balance 🎉');
+    }
+  } else {
+    lines.push(`Penyata Akaun — ${customer}`);
+    lines.push(formatLocalDate(todayISO, 'ms'));
+    lines.push('');
+    for (const e of merged) {
+      const dateStr = formatLocalDate(e.createdAt.slice(0, 10), 'ms');
+      const itemStr = e.qty ? `${e.item} ×${e.qty}` : e.item;
+      let status;
+      if (e.unpaidRM === 0) {
+        status = `✓ Dah bayar (${formatLocalDate((e.lastPaidAt ?? e.createdAt).slice(0, 10), 'ms')})`;
+      } else if (e.unpaidRM < e.totalRM) {
+        status = `Belum bayar (baki RM${e.unpaidRM.toFixed(2)})`;
+      } else {
+        status = 'Belum bayar';
+      }
+      lines.push(`${dateStr} | ${itemStr} | RM${e.totalRM.toFixed(2)} | ${status}`);
+    }
+    for (const p of custPayments) {
+      const dateStr = formatLocalDate(p.paidAt.slice(0, 10), 'ms');
+      lines.push(`${dateStr} | ✓ Bayar | RM${p.amountRM.toFixed(2)}`);
+    }
+    lines.push('');
+    if (totalOwed > 0) {
+      lines.push(`Baki: RM${totalOwed.toFixed(2)}`);
+    } else {
+      lines.push('Tiada baki tertunggak 🎉');
+    }
+  }
+
+  const text = lines.join('\n');
+
+  if (!msisdn || msisdn === '0000000000') {
+    return { text, url: '' };
+  }
+
+  const normalised = normaliseMsisdn(msisdn);
+  const url = `https://api.whatsapp.com/send?phone=${normalised}&text=${encodeURIComponent(text)}`;
+  return { text, url };
+}
+
+// ---------------------------------------------------------------------------
 // Demo data
 // ---------------------------------------------------------------------------
 
@@ -532,19 +880,42 @@ function calendarDaysDiff(fromISO, toISO) {
  * @param {Date} today
  * @returns {LedgerEntry[]}
  */
+/**
+ * Sample warung ledger for judges and first-time users, dated relative to
+ * `today` so it always shows one overdue ghost, one due today, one upcoming,
+ * one paid entry, and a pre-loaded partial payment to demonstrate bayaran-ansuran.
+ *
+ * Returns `{ entries, payments }` so the caller can populate both stores.
+ *
+ * @param {Date} today
+ * @returns {{ entries: LedgerEntry[], payments: PaymentRecord[] }}
+ */
 export function demoEntries(today = new Date()) {
   const shift = (days) => {
     const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + days);
     return localISO(d);
   };
+
+  // Fixed timestamps a few days before today so demo always feels recent
+  const createdYesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1).toISOString();
+  const created3ago      = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 3).toISOString();
+  const created10ago     = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 10).toISOString();
+
   const rows = [
-    { customer: 'Kak Ros', item: 'beras 5kg', qty: 1, amountRM: 18.5, dueDate: shift(-3), raw: 'Kak Ros hutang beras 5kg RM18.50' },
-    { customer: 'Kak Ros', item: 'gula', qty: 2, amountRM: 6, dueDate: shift(4), raw: 'Kak Ros 2kilo gula RM6 bayar minggu depan' },
-    { customer: 'Pak Mat', item: 'rokok', qty: 1, amountRM: 17, dueDate: shift(-10), raw: 'Pak Mat rokok RM17' },
-    { customer: 'Abang Jeff', item: 'minyak masak', qty: 1, amountRM: 9.9, dueDate: shift(0), raw: 'Abang Jeff minyak masak RM9.90 bayar hari ini' },
-    { customer: 'Mak Cik Timah', item: 'telur sepapan', qty: 1, amountRM: 13, dueDate: shift(7), raw: 'Mak Cik Timah telur sepapan RM13' },
+    { customer: 'Kak Ros',      item: 'beras 5kg',    qty: 1, amountRM: 18.5,  dueDate: shift(-3), raw: 'Kak Ros hutang beras 5kg RM18.50',             createdAt: created3ago },
+    { customer: 'Kak Ros',      item: 'gula',          qty: 2, amountRM: 6,     dueDate: shift(4),  raw: 'Kak Ros 2kilo gula RM6 bayar minggu depan',    createdAt: createdYesterday },
+    { customer: 'Pak Mat',      item: 'rokok',         qty: 1, amountRM: 17,    dueDate: shift(-10),raw: 'Pak Mat rokok RM17',                            createdAt: created10ago },
+    { customer: 'Abang Jeff',   item: 'minyak masak',  qty: 1, amountRM: 9.9,   dueDate: shift(0),  raw: 'Abang Jeff minyak masak RM9.90 bayar hari ini', createdAt: createdYesterday },
+    { customer: 'Mak Cik Timah',item: 'telur sepapan', qty: 1, amountRM: 13,    dueDate: shift(7),  raw: 'Mak Cik Timah telur sepapan RM13',              createdAt: createdYesterday },
   ];
-  const entries = rows.map((r) => createEntry(r));
-  const paid = createEntry({ customer: 'Adik Hafiz', item: 'roti', qty: 1, amountRM: 3.2, dueDate: shift(-1), raw: 'Adik Hafiz roti RM3.20' });
-  return [...entries, { ...paid, paid: true }];
+  const baseEntries = rows.map((r) => createEntry(r));
+  const paidEntry   = createEntry({ customer: 'Adik Hafiz', item: 'roti', qty: 1, amountRM: 3.2, dueDate: shift(-1), raw: 'Adik Hafiz roti RM3.20', createdAt: createdYesterday });
+  const allEntries  = [...baseEntries, { ...paidEntry, paid: true, paidAt: createdYesterday }];
+
+  // Apply a demo partial payment of RM10 for Kak Ros (oldest entry first — FIFO)
+  // This splits the beras 5kg entry: RM10 paid, RM8.50 still outstanding.
+  const payRaw = 'Kak Ros bayar RM10 (demo)';
+  const { ledger: entries, payments } = applyPayment(allEntries, [], 'Kak Ros', 10, payRaw);
+
+  return { entries, payments };
 }

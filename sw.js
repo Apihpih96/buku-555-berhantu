@@ -8,7 +8,7 @@
 // ---------------------------------------------------------------------------
 // Version — bump this string to invalidate old caches on next deploy
 // ---------------------------------------------------------------------------
-const CACHE_VERSION = 'buku555-v5';
+const CACHE_VERSION = 'buku555-v6';
 
 // ---------------------------------------------------------------------------
 // App shell — all resources required for offline use
