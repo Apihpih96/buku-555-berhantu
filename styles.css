@@ -626,3 +626,208 @@ h1 {
 .top-debtor-amount { color: var(--red); font-weight: 700; }
 .top-debtor-status { font-size: 0.9rem; font-style: italic; }
 .top-debtor-row.overdue .top-debtor-status { color: var(--red-dark); }
+
+/* ============================================================
+   UNDO BAR
+   ============================================================ */
+.undo-bar[hidden] { display: none; }
+
+.undo-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 56px;
+  padding: 8px 16px;
+  background: var(--red-dark);
+  color: #fff;
+  font-family: var(--font-ui);
+  font-size: 1rem;
+  box-shadow: 0 -4px 16px rgba(0,0,0,0.35);
+  animation: slideUpBar 0.25s ease;
+}
+
+@keyframes slideUpBar {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+.undo-bar-label {
+  flex: 1;
+  font-size: 1rem;
+  line-height: 1.3;
+}
+
+.btn-undo {
+  flex-shrink: 0;
+  min-height: 56px;
+  min-width: 96px;
+  padding: 0 20px;
+  background: #fff;
+  color: var(--red-dark);
+  border: 3px solid #fff;
+  border-radius: var(--radius);
+  font-family: var(--font-ui);
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.btn-undo:hover,
+.btn-undo:focus-visible {
+  background: var(--red-light);
+  color: var(--red-dark);
+  outline: 3px solid #fff;
+}
+.btn-undo:active { transform: scale(0.97); }
+
+/* Push footer up when undo-bar is visible so it doesn't overlap */
+.undo-bar:not([hidden]) ~ * { /* nothing — fixed overlay handles it */ }
+
+/* ============================================================
+   EDIT ENTRY DIALOG
+   ============================================================ */
+.edit-dialog {
+  border: none;
+  border-radius: 12px;
+  padding: 0;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  max-width: min(480px, 96vw);
+  width: 100%;
+  margin: auto;
+}
+.edit-dialog::backdrop {
+  background: rgba(0,0,0,0.55);
+}
+
+.edit-dialog-form {
+  padding: 24px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--paper);
+  border-radius: 12px;
+}
+
+.edit-dialog-title {
+  margin: 0 0 8px;
+  font-size: 1.3rem;
+  color: var(--red-dark);
+}
+
+.edit-dialog-error {
+  color: var(--error);
+  font-size: 1rem;
+  font-weight: 700;
+  padding: 8px 12px;
+  background: #fff3cd;
+  border-left: 4px solid var(--error);
+  border-radius: 4px;
+}
+.edit-dialog-error[hidden] { display: none; }
+
+.edit-label {
+  font-family: var(--font-ui);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ink);
+  margin-top: 8px;
+}
+
+.edit-input {
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 12px;
+  font-size: 1.1rem;
+  font-family: var(--font-ui);
+  border: 2px solid var(--paper-line);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--ink);
+}
+.edit-input:focus {
+  outline: none;
+  border-color: var(--red);
+  box-shadow: 0 0 0 3px rgba(183,28,28,0.2);
+}
+
+.edit-dialog-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+}
+.edit-dialog-actions .btn {
+  flex: 1;
+  min-height: 56px;
+  font-size: 1.1rem;
+}
+
+/* ============================================================
+   DELETE CONFIRM DIALOG
+   ============================================================ */
+.delete-dialog {
+  border: none;
+  border-radius: 12px;
+  padding: 0;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  max-width: min(400px, 96vw);
+  width: 100%;
+  margin: auto;
+}
+.delete-dialog::backdrop {
+  background: rgba(0,0,0,0.55);
+}
+
+.delete-dialog-body {
+  padding: 28px 20px 20px;
+  background: var(--paper);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.delete-dialog-msg {
+  font-size: 1.1rem;
+  line-height: 1.5;
+  color: var(--ink);
+  margin: 0;
+}
+
+.delete-dialog-actions {
+  display: flex;
+  gap: 12px;
+}
+.delete-dialog-actions .btn {
+  flex: 1;
+  min-height: 56px;
+  font-size: 1.1rem;
+}
+
+/* Destructive confirm button */
+.btn-del-confirm {
+  background: var(--red-dark);
+  color: #fff;
+  border: 2px solid var(--red-dark);
+  border-radius: var(--radius);
+  font-weight: 700;
+  cursor: pointer;
+}
+.btn-del-confirm:hover,
+.btn-del-confirm:focus-visible {
+  background: #5a0000;
+  outline: 3px solid var(--red-light);
+}
+
+/* Entry card — tap-to-edit affordance for unpaid entries */
+.entry-card:not(.paid) {
+  cursor: pointer;
+}
+.entry-card:not(.paid):hover {
+  box-shadow: 0 0 0 2px var(--red-light);
+}

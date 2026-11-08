@@ -115,6 +115,29 @@ export function deleteEntry(ledger, id) {
   return ledger.filter(e => e.id !== id);
 }
 
+/**
+ * Update mutable fields of an entry by id.
+ * Returns a new array; the original is not mutated.
+ *
+ * @param {LedgerEntry[]} ledger
+ * @param {string}        id
+ * @param {{ customer?: string, item?: string, qty?: number|null, amountRM?: number, dueDate?: string|null, raw?: string }} fields
+ * @returns {LedgerEntry[]}
+ */
+export function updateEntry(ledger, id, fields) {
+  if (fields.amountRM !== undefined && fields.amountRM < 0) {
+    throw new RangeError(`amountRM must be >= 0, got ${fields.amountRM}`);
+  }
+  return ledger.map(e => {
+    if (e.id !== id) return e;
+    return {
+      ...e,
+      ...fields,
+      amountRM: fields.amountRM !== undefined ? round2(fields.amountRM) : e.amountRM,
+    };
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Queries
 // ---------------------------------------------------------------------------

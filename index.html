@@ -141,6 +141,19 @@
   <div id="toast" class="toast" role="alert" aria-live="polite"></div>
 
   <!-- ============================================================
+       UNDO BAR — shown for 8 seconds after any mutating action
+  ============================================================ -->
+  <div id="undo-bar" class="undo-bar" role="status" aria-live="polite" hidden>
+    <span id="undo-bar-label" class="undo-bar-label"></span>
+    <button
+      id="btn-undo"
+      class="btn btn-undo"
+      type="button"
+      aria-label="Batal tindakan terakhir"
+    >↩ Batal</button>
+  </div>
+
+  <!-- ============================================================
        PHONE NUMBER DIALOG
   ============================================================ -->
   <dialog
@@ -180,6 +193,105 @@
         >Simpan</button>
       </div>
     </form>
+  </dialog>
+
+  <!-- ============================================================
+       EDIT ENTRY DIALOG
+  ============================================================ -->
+  <dialog
+    id="edit-dialog"
+    class="edit-dialog"
+    aria-label="Dialog kemaskini hutang"
+    aria-modal="true"
+  >
+    <div class="edit-dialog-form">
+      <h2 id="edit-dialog-title" class="edit-dialog-title">Kemaskini Hutang</h2>
+      <p id="edit-dialog-error" class="edit-dialog-error" hidden></p>
+
+      <label for="edit-customer" id="edit-label-customer" class="edit-label">Nama pelanggan</label>
+      <input
+        id="edit-customer"
+        type="text"
+        class="edit-input"
+        autocomplete="off"
+        autocorrect="off"
+        spellcheck="false"
+        aria-labelledby="edit-label-customer"
+      />
+
+      <label for="edit-item" id="edit-label-item" class="edit-label">Barang</label>
+      <input
+        id="edit-item"
+        type="text"
+        class="edit-input"
+        autocomplete="off"
+        autocorrect="off"
+        spellcheck="false"
+        aria-labelledby="edit-label-item"
+      />
+
+      <label for="edit-amount" id="edit-label-amount" class="edit-label">Jumlah (RM)</label>
+      <input
+        id="edit-amount"
+        type="number"
+        class="edit-input"
+        inputmode="decimal"
+        min="0.01"
+        step="0.01"
+        aria-labelledby="edit-label-amount"
+      />
+
+      <label for="edit-due" id="edit-label-due" class="edit-label">Tarikh bayar (YYYY-MM-DD)</label>
+      <input
+        id="edit-due"
+        type="date"
+        class="edit-input"
+        aria-labelledby="edit-label-due"
+      />
+
+      <div class="edit-dialog-actions">
+        <button
+          id="edit-dialog-batal"
+          type="button"
+          class="btn btn-batal"
+          aria-label="Batal — tutup dialog"
+        >Batal</button>
+        <button
+          id="edit-dialog-simpan"
+          type="button"
+          class="btn btn-simpan"
+          aria-label="Simpan kemaskini"
+        >Simpan</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- ============================================================
+       DELETE CONFIRM DIALOG
+  ============================================================ -->
+  <dialog
+    id="delete-dialog"
+    class="delete-dialog"
+    aria-label="Dialog pengesahan padam"
+    aria-modal="true"
+  >
+    <div class="delete-dialog-body">
+      <p id="delete-dialog-msg" class="delete-dialog-msg">Padam hutang ini? Tindakan ini boleh dibatalkan selepas.</p>
+      <div class="delete-dialog-actions">
+        <button
+          id="delete-dialog-batal"
+          type="button"
+          class="btn btn-batal"
+          aria-label="Batal — tutup dialog"
+        >Batal</button>
+        <button
+          id="delete-dialog-confirm"
+          type="button"
+          class="btn btn-del-confirm"
+          aria-label="Sahkan padam hutang"
+        >Padam</button>
+      </div>
+    </div>
   </dialog>
 
   <script type="module" src="app.js"></script>

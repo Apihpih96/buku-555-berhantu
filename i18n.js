@@ -99,6 +99,35 @@ const STRINGS = {
   ariaGhost:         { ms: 'Ikon hantu (tertunggak)',        en: 'Ghost icon (overdue)' },
   ariaLangToggle:    { ms: 'Tukar ke Bahasa Inggeris',      en: 'Switch to Bahasa Melayu' },
   ariaMicBtn:        { ms: 'Butang mikrofon sebutan suara', en: 'Voice input microphone button' },
+
+  // Undo bar
+  btnUndo:           { ms: '↩ Batal',                       en: '↩ Undo' },
+  ariaUndo:          { ms: 'Batal tindakan terakhir',        en: 'Undo last action' },
+  undoLabelAdd:      { ms: 'Hutang baru dicatat. Nak batal?',  en: 'Entry added. Undo?' },
+  undoLabelPaid:     { ms: 'Ditanda bayar. Nak batal?',        en: 'Marked paid. Undo?' },
+  undoLabelPayment:  { ms: 'Bayaran dicatat. Nak batal?',      en: 'Payment recorded. Undo?' },
+  undoLabelDelete:   { ms: 'Hutang dipadam. Nak batal?',       en: 'Entry deleted. Undo?' },
+  undoLabelEdit:     { ms: 'Hutang dikemaskini. Nak batal?',   en: 'Entry updated. Undo?' },
+  toastUndoDone:     { ms: 'Tindakan dibatalkan. ✓',           en: 'Action undone. ✓' },
+
+  // Edit dialog
+  btnEdit:                 { ms: '✏️ Edit',                          en: '✏️ Edit' },
+  ariaEditEntry:           { ms: 'Edit rekod hutang',                en: 'Edit debt entry' },
+  dialogEditTitle:         { ms: 'Kemaskini Hutang',                 en: 'Update Debt' },
+  dialogEditLabelCustomer: { ms: 'Nama pelanggan',                   en: 'Customer name' },
+  dialogEditLabelItem:     { ms: 'Barang',                           en: 'Item' },
+  dialogEditLabelAmount:   { ms: 'Jumlah (RM)',                      en: 'Amount (RM)' },
+  dialogEditLabelDue:      { ms: 'Tarikh bayar (YYYY-MM-DD)',        en: 'Due date (YYYY-MM-DD)' },
+  successEdit:             { ms: 'Rekod dikemaskini.',               en: 'Entry updated.' },
+  errEditCustomer:         { ms: 'Nama pelanggan tidak boleh kosong.', en: 'Customer name cannot be empty.' },
+  errEditAmount:           { ms: 'Jumlah mesti lebih daripada RM0.', en: 'Amount must be greater than RM0.' },
+
+  // Delete confirm dialog
+  dialogDeleteTitle:   { ms: 'Padam Hutang',                                               en: 'Delete Entry' },
+  dialogDeleteMsg:     { ms: 'Padam hutang ini? Tindakan ini boleh dibatalkan selepas.',   en: 'Delete this entry? You can undo immediately after.' },
+  btnConfirmDelete:    { ms: 'Padam',                                                       en: 'Delete' },
+  ariaDeleteDialog:    { ms: 'Dialog pengesahan padam',                                     en: 'Delete confirmation dialog' },
+  ariaConfirmDelete:   { ms: 'Sahkan padam hutang',                                         en: 'Confirm delete entry' },
 };
 
 /**

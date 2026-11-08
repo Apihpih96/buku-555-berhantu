@@ -12,6 +12,7 @@ import {
   addEntry,
   markPaid,
   deleteEntry,
+  updateEntry,
   totalOutstanding,
   overdueEntries,
   entriesByCustomer,
@@ -59,6 +60,30 @@ let phones = {};
 let deferredInstallPrompt = null;
 
 // ---------------------------------------------------------------------------
+// Undo history (in-memory only — never persisted to localStorage)
+// ---------------------------------------------------------------------------
+
+const UNDO_MAX = 20;
+const UNDO_TIMEOUT_MS = 8000;
+
+/**
+ * @typedef {Object} Snapshot
+ * @property {import('./ledger.js').LedgerEntry[]}  ledger
+ * @property {import('./ledger.js').PaymentRecord[]} payments
+ * @property {Record<string, string>}               phones
+ * @property {string}                               label  — i18n key
+ */
+
+/** @type {Snapshot[]} */
+let undoHistory = [];
+
+/** @type {ReturnType<typeof setTimeout> | null} */
+let undoTimer = null;
+
+/** id of the entry being edited in the edit dialog */
+let editingId = null;
+
+// ---------------------------------------------------------------------------
 // localStorage helpers
 // ---------------------------------------------------------------------------
 
@@ -85,6 +110,61 @@ function loadState() {
     phones = {};
     lang = 'ms';
   }
+}
+
+// ---------------------------------------------------------------------------
+// Undo helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Capture the current state as a snapshot and push it to the undo history.
+ * Caps the stack at UNDO_MAX entries (oldest discarded).
+ *
+ * @param {string} label — i18n key for the undo bar message
+ */
+function pushUndo(label) {
+  undoHistory.push({
+    ledger:   ledger.slice(),
+    payments: payments.slice(),
+    phones:   { ...phones },
+    label,
+  });
+  if (undoHistory.length > UNDO_MAX) undoHistory.shift();
+}
+
+/**
+ * Pop the most recent snapshot and restore all state from it.
+ */
+function doUndo() {
+  const snap = undoHistory.pop();
+  if (!snap) return;
+  ledger   = snap.ledger;
+  payments = snap.payments;
+  phones   = snap.phones;
+  saveState();
+  renderAll();
+  hideUndoBar();
+  showFeedback(T('toastUndoDone'), 'success');
+}
+
+/**
+ * Show the undo bar with the given label for UNDO_TIMEOUT_MS milliseconds.
+ * @param {string} label — human-readable text to display
+ */
+function showUndoBar(label) {
+  clearTimeout(undoTimer);
+  $('undo-bar-label').textContent = label;
+  $('undo-bar').hidden = false;
+  $('btn-undo').setAttribute('aria-label', T('ariaUndo'));
+  $('btn-undo').textContent = T('btnUndo');
+  undoTimer = setTimeout(hideUndoBar, UNDO_TIMEOUT_MS);
+}
+
+/** Hide the undo bar and cancel its timer. */
+function hideUndoBar() {
+  clearTimeout(undoTimer);
+  undoTimer = null;
+  $('undo-bar').hidden = true;
 }
 
 // ---------------------------------------------------------------------------
@@ -337,7 +417,7 @@ function buildEntryCard(entry, isOverdue) {
     payBtn.className = 'btn btn-pay';
     payBtn.textContent = T('btnPay');
     payBtn.setAttribute('aria-label', `${T('btnPay')} — ${entry.customer} ${entry.item}`);
-    payBtn.addEventListener('click', () => onMarkPaid(entry.id));
+    payBtn.addEventListener('click', (e) => { e.stopPropagation(); onMarkPaid(entry.id); });
     actions.appendChild(payBtn);
 
     // Show reminder button on ALL unpaid entries (not just overdue)
@@ -345,7 +425,7 @@ function buildEntryCard(entry, isOverdue) {
     waBtn.className = 'btn btn-wa';
     waBtn.textContent = T('btnWhatsApp');
     waBtn.setAttribute('aria-label', `${T('btnWhatsApp')} ${entry.customer}`);
-    waBtn.addEventListener('click', () => onWhatsApp(entry.customer));
+    waBtn.addEventListener('click', (e) => { e.stopPropagation(); onWhatsApp(entry.customer); });
     actions.appendChild(waBtn);
 
     // "Tukar nombor" link — only shown if a number is already saved
@@ -354,7 +434,7 @@ function buildEntryCard(entry, isOverdue) {
       tukarBtn.className = 'link-tukar';
       tukarBtn.textContent = T('linkTukarNombor');
       tukarBtn.setAttribute('aria-label', `${T('linkTukarNombor')} — ${entry.customer}`);
-      tukarBtn.addEventListener('click', () => onTukarNombor(entry.customer));
+      tukarBtn.addEventListener('click', (e) => { e.stopPropagation(); onTukarNombor(entry.customer); });
       actions.appendChild(tukarBtn);
     }
 
@@ -362,10 +442,17 @@ function buildEntryCard(entry, isOverdue) {
     delBtn.className = 'btn btn-del';
     delBtn.textContent = T('btnDelete');
     delBtn.setAttribute('aria-label', `${T('btnDelete')} — ${entry.customer}`);
-    delBtn.addEventListener('click', () => onDelete(entry.id));
+    delBtn.addEventListener('click', (e) => { e.stopPropagation(); onDelete(entry.id); });
     actions.appendChild(delBtn);
 
     card.appendChild(actions);
+
+    // Tap the card body (not a button) to open the edit dialog
+    card.addEventListener('click', (e) => {
+      // Ignore clicks that landed on a button or the actions area
+      if (/** @type {Element} */ (e.target).closest('button, .entry-actions, .link-tukar')) return;
+      onEditEntry(entry.id);
+    });
   }
 
   return card;
@@ -415,11 +502,13 @@ function onAddEntry() {
     raw,
   });
 
+  pushUndo('undoLabelAdd');
   ledger = addEntry(ledger, entry);
   saveState();
   renderLedger();
   input.value = '';
   showFeedback(T('successAdd'), 'success');
+  showUndoBar(T('undoLabelAdd'));
 }
 
 /**
@@ -443,6 +532,7 @@ function onApplyPayment(customer, amountRM, raw) {
     return;
   }
 
+  pushUndo('undoLabelPayment');
   ledger = result.ledger;
   payments = result.payments;
   saveState();
@@ -454,22 +544,151 @@ function onApplyPayment(customer, amountRM, raw) {
     .replace('{amount}', formatRM(appliedAmount))
     .replace('{customer}', customer);
   showFeedback(msg, 'success');
+  showUndoBar(T('undoLabelPayment'));
 }
 
 /** @param {string} id */
 function onMarkPaid(id) {
+  pushUndo('undoLabelPaid');
   ledger = markPaid(ledger, id);
   saveState();
   renderLedger();
   showFeedback(T('exorcised'), 'success');
+  showUndoBar(T('undoLabelPaid'));
 }
 
 /** @param {string} id */
 function onDelete(id) {
-  if (!confirm(T('confirmDelete'))) return;
+  openDeleteDialog(id);
+}
+
+/**
+ * Open the in-app delete confirmation dialog.
+ * @param {string} id
+ */
+function openDeleteDialog(id) {
+  const dialog = /** @type {HTMLDialogElement} */ ($('delete-dialog'));
+  const msgEl  = $('delete-dialog-msg');
+  const confirmBtn = $('delete-dialog-confirm');
+  const batalBtn   = $('delete-dialog-batal');
+
+  // i18n
+  msgEl.textContent = T('dialogDeleteMsg');
+  confirmBtn.textContent = T('btnConfirmDelete');
+  confirmBtn.setAttribute('aria-label', T('ariaConfirmDelete'));
+  batalBtn.textContent = T('btnBatal');
+  batalBtn.setAttribute('aria-label', T('ariaPhoneBatal'));
+  dialog.setAttribute('aria-label', T('ariaDeleteDialog'));
+
+  // Clone buttons to remove stale listeners
+  const newConfirm = confirmBtn.cloneNode(true);
+  confirmBtn.replaceWith(newConfirm);
+  const newBatal = batalBtn.cloneNode(true);
+  batalBtn.replaceWith(newBatal);
+
+  $('delete-dialog-confirm').addEventListener('click', () => {
+    dialog.close();
+    doDelete(id);
+  });
+  $('delete-dialog-batal').addEventListener('click', () => {
+    dialog.close();
+  });
+
+  dialog.addEventListener('click', (e) => {
+    if (e.target === dialog) dialog.close();
+  }, { once: true });
+
+  dialog.showModal();
+}
+
+/**
+ * Execute deletion after confirmation.
+ * @param {string} id
+ */
+function doDelete(id) {
+  pushUndo('undoLabelDelete');
   ledger = deleteEntry(ledger, id);
   saveState();
   renderLedger();
+  showUndoBar(T('undoLabelDelete'));
+}
+
+// ---------------------------------------------------------------------------
+// Edit entry dialog
+// ---------------------------------------------------------------------------
+
+/**
+ * Open the edit dialog pre-filled with the entry's current values.
+ * @param {string} id
+ */
+function onEditEntry(id) {
+  const entry = ledger.find(e => e.id === id);
+  if (!entry) return;
+
+  editingId = id;
+
+  const dialog = /** @type {HTMLDialogElement} */ ($('edit-dialog'));
+
+  // i18n labels
+  $('edit-dialog-title').textContent = T('dialogEditTitle');
+  $('edit-label-customer').textContent = T('dialogEditLabelCustomer');
+  $('edit-label-item').textContent = T('dialogEditLabelItem');
+  $('edit-label-amount').textContent = T('dialogEditLabelAmount');
+  $('edit-label-due').textContent = T('dialogEditLabelDue');
+  $('edit-dialog-batal').textContent = T('btnBatal');
+  $('edit-dialog-simpan').textContent = T('btnSimpan');
+
+  // Pre-fill values
+  /** @type {HTMLInputElement} */($('edit-customer')).value = entry.customer ?? '';
+  /** @type {HTMLInputElement} */($('edit-item')).value = entry.item ?? '';
+  /** @type {HTMLInputElement} */($('edit-amount')).value = entry.amountRM != null ? String(entry.amountRM) : '';
+  /** @type {HTMLInputElement} */($('edit-due')).value = entry.dueDate ?? '';
+
+  // Hide any previous error
+  const errEl = $('edit-dialog-error');
+  errEl.textContent = '';
+  errEl.hidden = true;
+
+  dialog.showModal();
+  requestAnimationFrame(() => /** @type {HTMLInputElement} */($('edit-customer')).focus());
+}
+
+/**
+ * Validate and apply edit when Simpan is tapped.
+ */
+function onConfirmEdit() {
+  const customer = /** @type {HTMLInputElement} */($('edit-customer')).value.trim();
+  const item     = /** @type {HTMLInputElement} */($('edit-item')).value.trim() || '—';
+  const amountRM = parseFloat(/** @type {HTMLInputElement} */($('edit-amount')).value);
+  const dueDate  = /** @type {HTMLInputElement} */($('edit-due')).value.trim() || null;
+
+  const errEl = $('edit-dialog-error');
+
+  if (!customer) {
+    errEl.textContent = T('errEditCustomer');
+    errEl.hidden = false;
+    $('edit-customer').focus();
+    return;
+  }
+  if (isNaN(amountRM) || amountRM <= 0) {
+    errEl.textContent = T('errEditAmount');
+    errEl.hidden = false;
+    $('edit-amount').focus();
+    return;
+  }
+
+  errEl.hidden = true;
+
+  const dialog = /** @type {HTMLDialogElement} */ ($('edit-dialog'));
+
+  pushUndo('undoLabelEdit');
+  ledger = updateEntry(ledger, editingId, { customer, item, amountRM, dueDate, raw: '' });
+  editingId = null;
+  saveState();
+  renderAll();
+  dialog.close();
+  showFeedback(T('successEdit'), 'success');
+  showUndoBar(T('undoLabelEdit'));
 }
 
 /**
@@ -717,6 +936,18 @@ function init() {
   $('btn-export').addEventListener('click', onExport);
   $('btn-import').addEventListener('click', onImport);
   if ($('btn-demo')) $('btn-demo').addEventListener('click', () => onLoadDemo(true));
+
+  // ---- Undo bar ----
+  $('btn-undo').addEventListener('click', doUndo);
+
+  // ---- Edit dialog (wired once; onEditEntry fills values before showModal) ----
+  $('edit-dialog-simpan').addEventListener('click', onConfirmEdit);
+  $('edit-dialog-batal').addEventListener('click', () => {
+    /** @type {HTMLDialogElement} */($('edit-dialog')).close();
+  });
+  $('edit-dialog').addEventListener('click', (e) => {
+    if (e.target === $('edit-dialog')) /** @type {HTMLDialogElement} */($('edit-dialog')).close();
+  });
 
   // ---- PWA: service worker registration ----
   if ('serviceWorker' in navigator) {
