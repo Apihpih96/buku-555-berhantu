@@ -4,7 +4,7 @@
  * Uses the app's own ledger functions and data format (see exportJSON in ledger.js).
  */
 
-import { createEntry, markPaid, totalOutstanding } from '../ledger.js';
+import { createEntry, markPaid, totalOutstanding, customerTotal, buildStatement } from '../ledger.js';
 
 const DAY_MS = 86_400_000;
 
@@ -52,6 +52,18 @@ export const TOOLS = [
       properties: {
         days: { type: 'number', description: 'Age threshold in days. Default: 7.' },
       },
+    },
+  },
+  {
+    name: 'get_statement',
+    description: 'Get a full itemised account statement for one customer. Returns statement text, total outstanding, entry count, and unpaid count.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        customer: { type: 'string', description: 'Customer name exactly as stored in the book.' },
+        lang: { type: 'string', enum: ['ms', 'en'], description: 'Language for the statement. Default: ms.' },
+      },
+      required: ['customer'],
     },
   },
 ];
@@ -148,6 +160,34 @@ export function callTool(name, args = {}, store, now = new Date()) {
         count: overdue.length,
         totalRM: overdue.reduce((s, e) => s + e.amountRM, 0),
         debts: overdue,
+      };
+    }
+
+    case 'get_statement': {
+      const customer = typeof args.customer === 'string' ? args.customer.trim() : '';
+      if (!customer) throw new ToolError('customer is required');
+      const lang = args.lang === 'en' ? 'en' : 'ms';
+
+      const { base, entries } = readBook(store);
+      const payments = Array.isArray(base.payments) ? base.payments : [];
+
+      const custEntries = entries.filter(e => e.customer === customer);
+      if (custEntries.length === 0) {
+        throw new ToolError(`No entries found for customer "${customer}"`);
+      }
+
+      const unpaidCount = custEntries.filter(e => !e.paid).length;
+      const total = totalOutstanding(custEntries);
+
+      // Build statement text (no phone — URL not needed for MCP)
+      const { text } = buildStatement(entries, payments, customer, '0000000000', now, lang);
+
+      return {
+        customer,
+        statementText: text,
+        totalOutstandingRM: total,
+        entryCount: custEntries.length,
+        unpaidCount,
       };
     }
 

@@ -703,6 +703,128 @@ function calendarDaysDiff(fromISO, toISO) {
 }
 
 // ---------------------------------------------------------------------------
+// Customer Statement
+// ---------------------------------------------------------------------------
+
+/**
+ * Number of calendar days between the `createdAt` of the oldest unpaid entry
+ * for `customer` and `today`. Returns 0 if the customer has no unpaid entries.
+ *
+ * @param {LedgerEntry[]} entries
+ * @param {string}        customer
+ * @param {Date}          today
+ * @returns {number}
+ */
+export function daysSinceOldestUnpaid(entries, customer, today = new Date()) {
+  const unpaid = entries.filter(e => !e.paid && e.customer === customer);
+  if (unpaid.length === 0) return 0;
+  // Find oldest createdAt
+  let oldest = unpaid[0].createdAt;
+  for (const e of unpaid) {
+    if (e.createdAt < oldest) oldest = e.createdAt;
+  }
+  // Convert ISO timestamp to YYYY-MM-DD (local date)
+  const fromISO = oldest.slice(0, 10);
+  const toISO   = localISO(today);
+  return calendarDaysDiff(fromISO, toISO);
+}
+
+/**
+ * Build a full itemised account statement for one customer.
+ *
+ * Returns `{ text, url }` where:
+ *  - `text` is the complete statement message string
+ *  - `url`  is the full `https://api.whatsapp.com/send?phone=...&text=...` URL
+ *            (or '' if msisdn is blank / customer has no entries)
+ *
+ * Uses LOCAL calendar dates — never toISOString() for display.
+ *
+ * @param {LedgerEntry[]}   entries   — full ledger
+ * @param {PaymentRecord[]} payments  — full payment records
+ * @param {string}          customer  — customer name
+ * @param {string}          msisdn    — raw phone number (will be normalised)
+ * @param {Date}            today     — reference date
+ * @param {'ms'|'en'}       [lang]    — default 'ms'
+ * @returns {{ text: string, url: string }}
+ */
+export function buildStatement(entries, payments, customer, msisdn, today = new Date(), lang = 'ms') {
+  // All entries for this customer (paid + unpaid), oldest first
+  const custEntries = entries
+    .filter(e => e.customer === customer)
+    .slice()
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
+  if (custEntries.length === 0) return { text: '', url: '' };
+
+  // Payment records for this customer, oldest first
+  const custPayments = payments
+    .filter(p => p.customer === customer)
+    .slice()
+    .sort((a, b) => a.paidAt.localeCompare(b.paidAt));
+
+  const todayISO = localISO(today);
+  const totalOwed = round2(custEntries.filter(e => !e.paid).reduce((s, e) => s + e.amountRM, 0));
+
+  const lines = [];
+
+  if (lang === 'en') {
+    lines.push(`Account Statement — ${customer}`);
+    lines.push(formatLocalDate(todayISO, 'en'));
+    lines.push('');
+    for (const e of custEntries) {
+      const dateStr = formatLocalDate(e.createdAt.slice(0, 10), 'en');
+      const itemStr = e.qty ? `${e.item} ×${e.qty}` : e.item;
+      const status  = e.paid
+        ? `✓ Paid (${formatLocalDate((e.paidAt ?? e.createdAt).slice(0, 10), 'en')})`
+        : 'Unpaid';
+      lines.push(`${dateStr} | ${itemStr} | RM${e.amountRM.toFixed(2)} | ${status}`);
+    }
+    for (const p of custPayments) {
+      const dateStr = formatLocalDate(p.paidAt.slice(0, 10), 'en');
+      lines.push(`${dateStr} | ✓ Payment | RM${p.amountRM.toFixed(2)}`);
+    }
+    lines.push('');
+    if (totalOwed > 0) {
+      lines.push(`Balance: RM${totalOwed.toFixed(2)}`);
+    } else {
+      lines.push('No outstanding balance 🎉');
+    }
+  } else {
+    lines.push(`Penyata Akaun — ${customer}`);
+    lines.push(formatLocalDate(todayISO, 'ms'));
+    lines.push('');
+    for (const e of custEntries) {
+      const dateStr = formatLocalDate(e.createdAt.slice(0, 10), 'ms');
+      const itemStr = e.qty ? `${e.item} ×${e.qty}` : e.item;
+      const status  = e.paid
+        ? `✓ Dah bayar (${formatLocalDate((e.paidAt ?? e.createdAt).slice(0, 10), 'ms')})`
+        : 'Belum bayar';
+      lines.push(`${dateStr} | ${itemStr} | RM${e.amountRM.toFixed(2)} | ${status}`);
+    }
+    for (const p of custPayments) {
+      const dateStr = formatLocalDate(p.paidAt.slice(0, 10), 'ms');
+      lines.push(`${dateStr} | ✓ Bayar | RM${p.amountRM.toFixed(2)}`);
+    }
+    lines.push('');
+    if (totalOwed > 0) {
+      lines.push(`Baki: RM${totalOwed.toFixed(2)}`);
+    } else {
+      lines.push('Tiada baki tertunggak 🎉');
+    }
+  }
+
+  const text = lines.join('\n');
+
+  if (!msisdn || msisdn === '0000000000') {
+    return { text, url: '' };
+  }
+
+  const normalised = normaliseMsisdn(msisdn);
+  const url = `https://api.whatsapp.com/send?phone=${normalised}&text=${encodeURIComponent(text)}`;
+  return { text, url };
+}
+
+// ---------------------------------------------------------------------------
 // Demo data
 // ---------------------------------------------------------------------------
 

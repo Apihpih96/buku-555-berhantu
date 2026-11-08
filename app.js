@@ -19,6 +19,7 @@ import {
   exportJSON,
   importJSON,
   buildReminder,
+  buildStatement,
   normaliseMsisdn,
   demoEntries,
   topDebtors,
@@ -26,8 +27,39 @@ import {
   migrateStorage,
   customerPayments,
   customerTotal,
+  daysSinceOldestUnpaid,
+  formatLocalDate,
 } from './ledger.js';
 import { t, DEFAULT_LANG } from './i18n.js';
+
+/** Current search query (trimmed, lowercase after honorific strip). */
+let searchQuery = '';
+
+/**
+ * Strip common Malay honorifics from the start of a name and lowercase it.
+ * @param {string} name
+ * @returns {string}
+ */
+function stripHonorifics(name) {
+  return name
+    .replace(/^(Pak Cik|Mak Cik|Abang|Encik|Puan|Kak|Cik)\s+/i, '')
+    .toLowerCase()
+    .trim();
+}
+
+/**
+ * Returns true when customerName matches query after stripping honorifics.
+ * Empty query always matches.
+ * @param {string} customerName
+ * @param {string} query
+ * @returns {boolean}
+ */
+function matchesSearch(customerName, query) {
+  if (!query) return true;
+  const q = stripHonorifics(query);
+  const n = stripHonorifics(customerName);
+  return n.includes(q);
+}
 
 // ---------------------------------------------------------------------------
 // State
@@ -186,6 +218,7 @@ function renderAll() {
   renderInput();
   renderTopDebtors();
   renderLedger();
+  renderSearchBox();
 }
 
 function renderHeader() {
@@ -221,6 +254,16 @@ function renderInput() {
 }
 
 /**
+ * Update search box placeholder/aria label for current language.
+ */
+function renderSearchBox() {
+  const searchInput = $('customer-search');
+  if (!searchInput) return;
+  searchInput.placeholder = T('searchPlaceholder');
+  searchInput.setAttribute('aria-label', T('searchLabel'));
+}
+
+/**
  * Render the top-debtors card above the ledger.
  * Hidden when no unpaid entries exist.
  */
@@ -232,6 +275,12 @@ function renderTopDebtors() {
   const debtors = topDebtors(ledger, today, 3);
 
   if (debtors.length === 0) {
+    card.hidden = true;
+    return;
+  }
+
+  // Hide top debtors card when a search query is active
+  if (searchQuery) {
     card.hidden = true;
     return;
   }
@@ -285,24 +334,33 @@ function renderLedger() {
   const overdue = new Set(overdueEntries(ledger, today).map(e => e.id));
   const byCustomer = entriesByCustomer(ledger);
 
+  // Apply search filter
+  const filteredCustomers = searchQuery
+    ? [...byCustomer.entries()].filter(([name]) => matchesSearch(name, searchQuery))
+    : [...byCustomer.entries()];
+
   const container = $('ledger-list');
   container.innerHTML = '';
 
-  if (byCustomer.size === 0) {
+  if (filteredCustomers.length === 0) {
     const empty = document.createElement('p');
     empty.className = 'empty-msg';
-    empty.textContent = T('noEntries');
+    empty.textContent = searchQuery ? T('noSearchMatch') : T('noEntries');
     container.appendChild(empty);
     return;
   }
 
-  for (const [customer, entries] of byCustomer) {
+  for (const [customer, entries] of filteredCustomers) {
     const section = document.createElement('section');
     section.className = 'customer-section';
 
-    const header = document.createElement('h2');
-    header.className = 'customer-name';
+    // Make the customer name a tappable button to open the detail page
+    const header = document.createElement('button');
+    header.className = 'customer-name customer-name-btn';
+    header.type = 'button';
+    header.setAttribute('aria-label', `${customer} — ${T('customerPageTitle')}`);
     header.textContent = customer;
+    header.addEventListener('click', () => openCustomerPage(customer));
     section.appendChild(header);
 
     for (const entry of entries) {
@@ -338,21 +396,23 @@ function renderLedger() {
     container.appendChild(section);
   }
 
-  // Paid entries (collapsed)
-  const paidEntries = ledger.filter(e => e.paid);
-  if (paidEntries.length > 0) {
-    const details = document.createElement('details');
-    details.className = 'paid-section';
-    const summary = document.createElement('summary');
-    summary.textContent = `${T('paidLabel')} (${paidEntries.length})`;
-    details.appendChild(summary);
+  // Paid entries (collapsed) — hide when a search query is active
+  if (!searchQuery) {
+    const paidEntries = ledger.filter(e => e.paid);
+    if (paidEntries.length > 0) {
+      const details = document.createElement('details');
+      details.className = 'paid-section';
+      const summary = document.createElement('summary');
+      summary.textContent = `${T('paidLabel')} (${paidEntries.length})`;
+      details.appendChild(summary);
 
-    for (const entry of paidEntries) {
-      const card = buildEntryCard(entry, false);
-      card.classList.add('paid');
-      details.appendChild(card);
+      for (const entry of paidEntries) {
+        const card = buildEntryCard(entry, false);
+        card.classList.add('paid');
+        details.appendChild(card);
+      }
+      container.appendChild(details);
     }
-    container.appendChild(details);
   }
 }
 
@@ -917,6 +977,213 @@ function showFeedback(msg, type = 'success') {
 }
 
 // ---------------------------------------------------------------------------
+// Customer Page
+// ---------------------------------------------------------------------------
+
+/** @type {string|null} Currently displayed customer name in the page panel */
+let activeCustomer = null;
+
+/**
+ * Open the customer detail page for a given customer.
+ * @param {string} customer
+ */
+function openCustomerPage(customer) {
+  // Don't open if no entries at all
+  const allEntries = ledger.filter(e => e.customer === customer);
+  if (allEntries.length === 0) return;
+
+  activeCustomer = customer;
+  renderCustomerPage(customer);
+
+  // Show customer page, hide main content
+  $('customer-page').hidden = false;
+  $('app-main').hidden = true;
+  $('app-footer').hidden = true;
+  $('undo-bar').hidden = true;
+}
+
+/**
+ * Close the customer detail page and return to main view.
+ */
+function closeCustomerPage() {
+  activeCustomer = null;
+  $('customer-page').hidden = true;
+  $('app-main').hidden = false;
+  $('app-footer').hidden = false;
+}
+
+/**
+ * Render the customer statement page content for the given customer.
+ * @param {string} customer
+ */
+function renderCustomerPage(customer) {
+  // Update i18n labels
+  $('customer-page-title').textContent = T('customerPageTitle');
+  $('customer-page').setAttribute('aria-label', T('ariaCustomerPage'));
+  $('btn-tutup').textContent = T('btnTutup');
+  $('btn-tutup').setAttribute('aria-label', T('ariaBtnTutup'));
+  $('btn-hantar-penyata').textContent = T('btnHantarPenyata');
+  $('btn-hantar-penyata').setAttribute('aria-label', T('ariaBtnHantarPenyata'));
+
+  // Customer name
+  $('customer-page-name').textContent = customer;
+
+  // Meta: total owed and days since oldest unpaid
+  const today = new Date();
+  const total = customerTotal(ledger, customer);
+  const days  = daysSinceOldestUnpaid(ledger, customer, today);
+
+  $('customer-total-owed').textContent =
+    `${T('labelTotalOwed')}: RM${total.toFixed(2)}`;
+
+  if (days > 0) {
+    $('customer-days-owed').textContent =
+      lang === 'en'
+        ? `${T('labelDaysOwed')}: ${days} hari`
+        : `${T('labelDaysOwed')}: ${days} hari`;
+  } else {
+    $('customer-days-owed').textContent = '';
+  }
+
+  // Show/hide Hantar Penyata button
+  const allEntries = ledger.filter(e => e.customer === customer);
+  $('btn-hantar-penyata').disabled = allEntries.length === 0;
+
+  // Build the chronological list
+  const listEl = $('customer-page-list');
+  listEl.innerHTML = '';
+
+  // All entries sorted by createdAt
+  const sortedEntries = allEntries
+    .slice()
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
+  // All payments sorted by paidAt
+  const custPmts = customerPayments(payments, customer)
+    .slice()
+    .sort((a, b) => a.paidAt.localeCompare(b.paidAt));
+
+  // Interleave entries and payments chronologically
+  // We'll render entries first, then payment records separately
+  // (interleaved by date would be complex; use simple two-section approach)
+
+  // Entries section
+  for (const e of sortedEntries) {
+    const row = document.createElement('div');
+    row.className = 'customer-stmt-row' + (e.paid ? ' paid' : ' unpaid');
+    row.setAttribute('role', 'listitem');
+
+    const dateEl = document.createElement('span');
+    dateEl.className = 'stmt-date';
+    dateEl.textContent = formatLocalDate(e.createdAt.slice(0, 10), lang);
+
+    const itemEl = document.createElement('span');
+    itemEl.className = 'stmt-item';
+    itemEl.textContent = e.qty ? `${e.item} ×${e.qty}` : e.item;
+
+    const amtEl = document.createElement('span');
+    amtEl.className = 'stmt-amount';
+    amtEl.textContent = `RM${e.amountRM.toFixed(2)}`;
+
+    const statusEl = document.createElement('span');
+    statusEl.className = 'stmt-status';
+    if (e.paid) {
+      const paidDate = e.paidAt ? formatLocalDate(e.paidAt.slice(0, 10), lang) : '';
+      statusEl.textContent = paidDate
+        ? `${T('stmtPaid')} (${paidDate})`
+        : T('stmtPaid');
+      statusEl.classList.add('status-paid');
+    } else {
+      statusEl.textContent = T('stmtUnpaid');
+      statusEl.classList.add('status-unpaid');
+    }
+
+    if (e.dueDate) {
+      const dueEl = document.createElement('span');
+      dueEl.className = 'stmt-due';
+      dueEl.textContent = `${T('labelDue')}: ${formatLocalDate(e.dueDate, lang)}`;
+      row.append(dateEl, itemEl, amtEl, dueEl, statusEl);
+    } else {
+      row.append(dateEl, itemEl, amtEl, statusEl);
+    }
+
+    listEl.appendChild(row);
+  }
+
+  // Payment records section
+  if (custPmts.length > 0) {
+    const pmtHeader = document.createElement('div');
+    pmtHeader.className = 'stmt-section-header';
+    pmtHeader.textContent = T('labelPaymentHistory');
+    listEl.appendChild(pmtHeader);
+
+    for (const p of custPmts) {
+      const row = document.createElement('div');
+      row.className = 'customer-stmt-row payment';
+      row.setAttribute('role', 'listitem');
+
+      const dateEl = document.createElement('span');
+      dateEl.className = 'stmt-date';
+      dateEl.textContent = formatLocalDate(p.paidAt.slice(0, 10), lang);
+
+      const labelEl = document.createElement('span');
+      labelEl.className = 'stmt-item';
+      labelEl.textContent = T('stmtPayment');
+
+      const amtEl = document.createElement('span');
+      amtEl.className = 'stmt-amount';
+      amtEl.textContent = `RM${p.amountRM.toFixed(2)}`;
+
+      row.append(dateEl, labelEl, amtEl);
+      listEl.appendChild(row);
+    }
+  }
+
+  // Summary at the bottom
+  const summaryEl = document.createElement('div');
+  summaryEl.className = 'stmt-summary';
+  if (total > 0) {
+    summaryEl.textContent = `${T('stmtBalance')}: RM${total.toFixed(2)}`;
+    summaryEl.classList.add('stmt-balance-owed');
+  } else {
+    summaryEl.textContent = T('stmtNoBalance');
+    summaryEl.classList.add('stmt-balance-clear');
+  }
+  listEl.appendChild(summaryEl);
+}
+
+/**
+ * Handle "Hantar Penyata" button on the customer page.
+ * Reuses the same phone-dialog flow as onWhatsApp.
+ */
+function onHantarPenyata() {
+  if (!activeCustomer) return;
+  const customer = activeCustomer;
+  const savedPhone = phones[customer];
+  if (savedPhone) {
+    openStatementReminder(customer, savedPhone);
+  } else {
+    openPhoneDialog(customer, (msisdn) => {
+      openStatementReminder(customer, msisdn);
+    });
+  }
+}
+
+/**
+ * Build the statement URL and open it in WhatsApp.
+ * @param {string} customer
+ * @param {string} rawPhone
+ */
+function openStatementReminder(customer, rawPhone) {
+  const { url } = buildStatement(ledger, payments, customer, rawPhone, new Date(), lang);
+  if (!url) {
+    showFeedback(T('noEntries'), 'error');
+    return;
+  }
+  window.open(url, '_blank', 'noopener');
+}
+
+// ---------------------------------------------------------------------------
 // Bootstrap
 // ---------------------------------------------------------------------------
 
@@ -939,6 +1206,20 @@ function init() {
 
   // ---- Undo bar ----
   $('btn-undo').addEventListener('click', doUndo);
+
+  // ---- Customer search ----
+  const searchInput = $('customer-search');
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      searchQuery = searchInput.value.trim();
+      renderTopDebtors();
+      renderLedger();
+    });
+  }
+
+  // ---- Customer page ----
+  $('btn-tutup').addEventListener('click', closeCustomerPage);
+  $('btn-hantar-penyata').addEventListener('click', onHantarPenyata);
 
   // ---- Edit dialog (wired once; onEditEntry fills values before showModal) ----
   $('edit-dialog-simpan').addEventListener('click', onConfirmEdit);

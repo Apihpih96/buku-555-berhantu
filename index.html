@@ -42,7 +42,7 @@
   <!-- ============================================================
        MAIN
   ============================================================ -->
-  <main class="app-main" role="main">
+  <main id="app-main" class="app-main" role="main">
 
     <!-- ---- Entry form ---- -->
     <section class="entry-section" aria-labelledby="entry-heading">
@@ -98,6 +98,21 @@
     <!-- ---- Ledger list ---- -->
     <section class="ledger-section" aria-labelledby="section-title">
       <h2 id="section-title" class="section-title">Senarai Hutang</h2>
+
+      <!-- Search box -->
+      <div class="search-row">
+        <input
+          id="customer-search"
+          type="search"
+          class="customer-search"
+          placeholder="Cari pelanggan…"
+          aria-label="Cari pelanggan"
+          autocomplete="off"
+          autocorrect="off"
+          spellcheck="false"
+        />
+      </div>
+
       <div id="ledger-list" class="ledger-list" role="list">
         <!-- Entries rendered by app.js -->
         <p class="empty-msg">Tiada hutang. Alhamdulillah! 🎉</p>
@@ -109,7 +124,7 @@
   <!-- ============================================================
        FOOTER / TOOLBAR
   ============================================================ -->
-  <footer class="app-footer" role="contentinfo">
+  <footer id="app-footer" class="app-footer" role="contentinfo">
     <button
       id="btn-demo"
       class="btn btn-toolbar"
@@ -293,6 +308,48 @@
       </div>
     </div>
   </dialog>
+
+  <!-- ============================================================
+       CUSTOMER STATEMENT PAGE (hidden until a name is tapped)
+  ============================================================ -->
+  <section
+    id="customer-page"
+    class="customer-page"
+    hidden
+    aria-label="Halaman penyata pelanggan"
+    aria-modal="false"
+  >
+    <div class="customer-page-header">
+      <button
+        id="btn-tutup"
+        class="btn btn-tutup"
+        type="button"
+        aria-label="Tutup halaman pelanggan"
+      >✕ Tutup</button>
+      <div class="customer-page-title-group">
+        <h2 id="customer-page-title" class="customer-page-title">Penyata Pelanggan</h2>
+        <span id="customer-page-name" class="customer-page-name"></span>
+      </div>
+    </div>
+
+    <div class="customer-page-meta">
+      <span id="customer-total-owed" class="customer-meta-item"></span>
+      <span id="customer-days-owed" class="customer-meta-item"></span>
+    </div>
+
+    <div id="customer-page-list" class="customer-page-list" role="list">
+      <!-- Rows rendered by app.js -->
+    </div>
+
+    <div class="customer-page-actions">
+      <button
+        id="btn-hantar-penyata"
+        class="btn btn-hantar-penyata"
+        type="button"
+        aria-label="Hantar penyata ke WhatsApp"
+      >📄 Hantar Penyata</button>
+    </div>
+  </section>
 
   <script type="module" src="app.js"></script>
 </body>

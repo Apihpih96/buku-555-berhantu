@@ -122,6 +122,33 @@ const STRINGS = {
   errEditCustomer:         { ms: 'Nama pelanggan tidak boleh kosong.', en: 'Customer name cannot be empty.' },
   errEditAmount:           { ms: 'Jumlah mesti lebih daripada RM0.', en: 'Amount must be greater than RM0.' },
 
+  // Search
+  searchPlaceholder:  { ms: 'Cari pelanggan…',                en: 'Search customer…' },
+  searchLabel:        { ms: 'Cari pelanggan',                 en: 'Search customer' },
+  noSearchMatch:      { ms: 'Tiada padanan.',                 en: 'No match.' },
+
+  // Customer page
+  btnTutup:           { ms: '✕ Tutup',                        en: '✕ Close' },
+  customerPageTitle:  { ms: 'Penyata Pelanggan',              en: 'Customer Statement' },
+  labelCreatedAt:     { ms: 'Tarikh',                         en: 'Date' },
+  labelStatus:        { ms: 'Status',                         en: 'Status' },
+  labelUnpaid:        { ms: 'Belum bayar',                    en: 'Unpaid' },
+  labelPaidOn:        { ms: 'Dibayar',                        en: 'Paid' },
+  labelDaysOwed:      { ms: 'Hari terhutang',                 en: 'Days owed' },
+  labelTotalOwed:     { ms: 'Jumlah terhutang',               en: 'Total owed' },
+  btnHantarPenyata:   { ms: '📄 Hantar Penyata',              en: '📄 Send Statement' },
+  ariaCustomerPage:   { ms: 'Halaman penyata pelanggan',      en: 'Customer statement page' },
+  ariaBtnTutup:       { ms: 'Tutup halaman pelanggan',        en: 'Close customer page' },
+  ariaBtnHantarPenyata: { ms: 'Hantar penyata ke WhatsApp',   en: 'Send statement to WhatsApp' },
+
+  // Statement text
+  stmtHeader:   { ms: 'Penyata Akaun',              en: 'Account Statement' },
+  stmtNoBalance:{ ms: 'Tiada baki tertunggak 🎉',   en: 'No outstanding balance 🎉' },
+  stmtBalance:  { ms: 'Baki',                        en: 'Balance' },
+  stmtPayment:  { ms: '✓ Bayar',                     en: '✓ Payment' },
+  stmtUnpaid:   { ms: 'Belum bayar',                 en: 'Unpaid' },
+  stmtPaid:     { ms: '✓ Dah bayar',                 en: '✓ Paid' },
+
   // Delete confirm dialog
   dialogDeleteTitle:   { ms: 'Padam Hutang',                                               en: 'Delete Entry' },
   dialogDeleteMsg:     { ms: 'Padam hutang ini? Tindakan ini boleh dibatalkan selepas.',   en: 'Delete this entry? You can undo immediately after.' },
